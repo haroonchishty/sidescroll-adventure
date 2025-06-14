@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Rescue Side-Scroller</title>
+    <!-- Tailwind CSS CDN for general page styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        /* Custom CSS for game canvas and pixel art effects */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c; /* Dark background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden; /* Prevent scrolling */
+        }
+
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #2d3748; /* Darker container background */
+            border-radius: 1rem; /* Rounded corners */
+            padding: 1.5rem;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.5);
+            max-width: 90vw; /* Responsive width */
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        canvas {
+            background-color: #7da5d9; /* Sky blue for background */
+            border: 4px solid #a0aec0;
+            border-radius: 0.5rem; /* Rounded corners for canvas */
+            display: block;
+            touch-action: none; /* Disable default touch actions like pan/zoom */
+            width: 100%; /* Make canvas fluid width */
+            max-width: 800px; /* Max width for larger screens */
+            height: auto; /* Maintain aspect ratio */
+            aspect-ratio: 16/9; /* Widescreen aspect ratio for side-scroller */
+            image-rendering: optimizeSpeed;             /* Older versions of FF */
+            image-rendering: -moz-crisp-edges;          /* FF 6.0+ */
+            image-rendering: -webkit-optimize-contrast; /* Safari, Chrome */
+            image-rendering: optimize-contrast;         /* IE 10+ */
+            image-rendering: pixelated;                 /* Chrome 41+ and Opera */
+            -ms-interpolation-mode: nearest-neighbor;   /* IE 7+ */
+        }
+
+        /* Message box is now hidden as text is drawn on canvas */
+        .message-box {
+            display: none;
+        }
+
+        .game-info {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 800px;
+            margin-bottom: 0.5rem;
+            color: white;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .controls {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            width: 100%;
+            max-width: 400px; /* Limit width for touch controls */
+            justify-content: center;
+        }
+
+        .control-button {
+            background-color: #4299e1; /* Blue button */
+            color: white;
+            padding: 0.75rem 1.25rem;
+            border-radius: 0.5rem;
+            font-size: 1.2rem;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            flex: 1; /* Distribute space evenly */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+            transition: background-color 0.2s ease, transform 0.1s ease;
+            user-select: none; /* Prevent text selection on tap */
+            -webkit-tap-highlight-color: transparent; /* Remove tap highlight */
+        }
+
+        .control-button:active {
+            background-color: #2b6cb0; /* Darker blue on active */
+            transform: translateY(2px); /* Press effect */
+        }
+
+        .restart-button {
+            background-color: #e53e3e; /* Red for restart */
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-size: 1.2rem;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+            transition: background-color 0.2s ease, transform 0.1s ease;
+            margin-top: 1rem;
+        }
+
+        .restart-button:active {
+            background-color: #c53030;
+            transform: translateY(2px);
+        }
+
+        /* Responsive adjustments */
+        @media (min-width: 768px) {
+            .game-container {
+                padding: 2rem;
+            }
+            .message-box {
+                font-size: 1.25rem;
+            }
+            .control-button {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1 class="text-3xl sm:text-4xl font-bold text-white mb-4 text-center">Pixel Rescue Side-Scroller</h1>
+        <div class="game-info">
+            <span id="scoreDisplay">Score: 0</span>
+        </div>
+        <div id="message-box" class="message-box">Use Arrow Keys (Left/Right/Up) or Touch Controls to move and jump!</div>
+        <canvas id="gameCanvas"></canvas>
+        <div class="controls"> <!-- Controls for all screen sizes -->
+            <button id="leftButton" class="control-button">◀</button>
+            <button id="jumpButton" class="control-button">JUMP</button>
+            <button id="rightButton" class="control-button">▶</button>
+        </div>
+        <button id="restartButton" class="restart-button hidden">Restart Game</button>
+    </div>
+
+    <script type="module">
+        // Get the canvas element and its 2D rendering context
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Game configuration
+        const gridSize = 32; // Size of each 'pixel' block (tile) in the game world
+        const GRAVITY = 1.2;
+        const JUMP_STRENGTH = -20; // Negative because Y-axis is inverted (up is -Y)
+        const PLAYER_HORIZONTAL_SPEED = 6;
+        let cameraX = 0; // Current camera offset for scrolling
+
+        // Character definitions
+        // Man (rescuer)
+        const man = {
+            initialX: 2 * gridSize, // Starting position for man
+            initialY: 0,
+            x: 0, y: 0, dx: 0, dy: 0,
+            // Shape defined as 2x2 'sub-blocks' for 1 tile width, 2 tiles height
+            // So character is (gridSize wide) x (2*gridSize tall)
+            shape: [
+                [1], // Head
+                [2], // Torso
+                [3], // Pants
+                [4]  // Feet/Lower Pants (to make it 2 tiles tall effectively)
+            ],
+            colorMap: {
+                1: '#f0c78c', // Head
+                2: '#82b9e2', // Kameez
+                3: '#3d5c80', // Shalwar
+                4: '#3d5c80'  // Lower Shalwar / Feet area
+            },
+            width: gridSize, // Character is 1 tile wide
+            height: 2 * gridSize, // Character is 2 tiles tall
+            onGround: false,
+            animationFrame: 0,
+            animationSpeed: 5, // Frames per animation cycle for walking
+            isHit: false, // New: Indicates if man is currently hit/invincible
+            hitTimer: 0 // New: Timer for hit animation/invincibility
+        };
+
+        // Woman (to be rescued)
+        const woman = {
+            x: 0, y: 0,
+            width: gridSize,
+            height: 2 * gridSize,
+            shape: [
+                [1], // Head
+                [2], // Choli
+                [3], // Lengha part 1
+                [3]  // Lengha part 2
+            ],
+            colorMap: {
+                1: '#f0c78c', // Skin
+                2: '#e74c3c', // Choli (red)
+                3: '#9b59b6'  // Lengha (purple)
+            }
+        };
+
+        // Enemy definition
+        function createEnemy(x, y, speed) {
+            return {
+                x: x,
+                y: y,
+                width: gridSize,
+                height: gridSize,
+                dx: speed,
+                dy: 0, // Enemies also have vertical velocity for gravity
+                color: '#c0392b' // Dark red
+            };
+        }
+        let enemies = [];
+
+        // Collectible definition (coins)
+        function createCollectible(x, y) {
+            return {
+                x: x,
+                y: y,
+                width: gridSize / 2, // Half tile size for coins
+                height: gridSize / 2,
+                color: '#f1c40f', // Gold
+                collected: false
+            };
+        }
+        let collectibles = [];
+
+        // Cloud definition
+        function createCloud(x, y, width, height, speed) {
+            return { x, y, width, height, speed, color: '#ecf0f1' }; // Light grey/white
+        }
+        let clouds = [];
+
+        // Confetti particle definition
+        function createConfettiParticle(x, y) {
+            const colors = ['#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3', '#03a9f4', '#00bcd4', '#009688', '#4caf50', '#8bc34a', '#cddc39', '#ffeb3b', '#ffc107', '#ff9800', '#ff5722'];
+            return {
+                x: x,
+                y: y,
+                size: Math.random() * 5 + 3, // Random size between 3 and 8
+                dx: (Math.random() - 0.5) * 10, // Horizontal velocity
+                dy: (Math.random() - 1) * 10,  // Upward initial velocity
+                color: colors[Math.floor(Math.random() * colors.length)],
+                lifetime: 60 + Math.random() * 60 // Lifetime in frames (1-2 seconds)
+            };
+        }
+        let confettiParticles = []; // Array to hold confetti particles
+
+
+        // Original Game Map for resetting (do not modify this directly during game)
+        // 'G' = Ground, 'O' = Obstacle, ' ' = Air, 'P' = Platform, 'E' = Enemy Spawn, 'C' = Collectible
+        const originalGameMap = [
+            // Level design (approx 40 tiles wide for a decent length)
+            // Row 0 (Sky)
+            [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+            [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+            [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+            [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+            // Row 4 (Higher Platforms)
+            [' ', ' ', ' ', ' ', ' ', ' ', ' ', 'C', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', ' ', ' ', ' ', 'C', ' ', ' ', ' ', 'C'], // C added, last C
+            // Row 5 (Mid-level Platforms/Obstacles)
+            [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+            // Row 6 (More Platforms)
+            [' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', 'E', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' '], // E for enemy, C for collectible
+            // Row 7 (Main Ground and Gaps)
+            ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', 'C', ' ', 'O', 'O', 'O', ' ', ' ', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G'], // C added
+            // Row 8 (Obstacles/Ground)
+            ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', ' ', ' ', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G'],
+            // Row 9 (Bottom Layer - for falling into void)
+            ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G']
+        ];
+        // The game's active map, which can be modified (e.g., by collecting items)
+        let gameMap = [];
+
+        const mapWidthTiles = originalGameMap[0].length;
+        const mapHeightTiles = originalGameMap.length;
+        const totalMapPixelWidth = mapWidthTiles * gridSize;
+        const totalMapPixelHeight = mapHeightTiles * gridSize;
+
+        // Game state variables
+        let gameEnded = false; // When woman is rescued
+        let gameOver = false; // When man dies
+        let score = 0;
+        let messageText = "Use Arrow Keys (Left/Right/Up)\nor Touch Controls to move and jump!"; // Text for overlay, now with newline
+        let scoreDisplay = document.getElementById('scoreDisplay');
+        let restartButton = document.getElementById('restartButton');
+
+        // Keyboard input handling
+        const keys = {
+            ArrowLeft: false, ArrowRight: false, ArrowUp: false,
+            a: false, d: false, w: false
+        };
+
+        // Event listeners for keyboard
+        document.addEventListener('keydown', (e) => {
+            if (keys.hasOwnProperty(e.key)) {
+                keys[e.key] = true;
+                e.preventDefault();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (keys.hasOwnProperty(e.key)) {
+                keys[e.key] = false;
+            }
+        });
+
+        // Touch controls setup
+        const leftButton = document.getElementById('leftButton');
+        const rightButton = document.getElementById('rightButton');
+        const jumpButton = document.getElementById('jumpButton');
+        restartButton.addEventListener('click', resetGame);
+
+        function handleButtonPress(key, isPressed) {
+            if (keys.hasOwnProperty(key)) {
+                keys[key] = isPressed;
+            }
+        }
+
+        // Attach touch and mouse events to buttons
+        [
+            { button: leftButton, key: 'ArrowLeft' },
+            { button: rightButton, key: 'ArrowRight' },
+            { button: jumpButton, key: 'ArrowUp' }
+        ].forEach(({ button, key }) => {
+            // Mouse events
+            button.addEventListener('mousedown', () => handleButtonPress(key, true));
+            button.addEventListener('mouseup', () => handleButtonPress(key, false));
+            button.addEventListener('mouseleave', () => handleButtonPress(key, false)); // Release if mouse leaves button
+            // Touch events
+            button.addEventListener('touchstart', (e) => { e.preventDefault(); handleButtonPress(key, true); }, { passive: false });
+            button.addEventListener('touchend', () => handleButtonPress(key, false));
+            button.addEventListener('touchcancel', () => handleButtonPress(key, false));
+        });
+
+        // Function to check for intersection between two rectangles
+        function intersectRect(r1, r2) {
+            return !(r2.x >= r1.x + r1.width ||
+                     r2.x + r2.width <= r1.x ||
+                     r2.y >= r1.y + r1.height ||
+                     r2.y + r2.height <= r1.y);
+        }
+
+        // Function to get the bounding box of a tile
+        function getTileBoundingBox(tileX, tileY) {
+            return {
+                x: tileX * gridSize,
+                y: tileY * gridSize,
+                width: gridSize,
+                height: gridSize
+            };
+        }
+
+
+        // Function to resize canvas and initialize game positions
+        function resizeGame() {
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth > 800 ? 800 : container.clientWidth;
+            canvas.height = (canvas.width / 16) * 9;
+
+            // Initial placement for man and woman
+            man.x = man.initialX;
+            // Man's Y is set after gravity calculation on initial load in gameLoop
+            // For now, place him roughly on the ground for initial draw
+            man.y = totalMapPixelHeight - (2 * gridSize) - man.height;
+
+            woman.x = (mapWidthTiles - 5) * gridSize; // 5 tiles from the right edge
+            woman.y = totalMapPixelHeight - (2 * gridSize) - woman.height; // Woman is always on ground
+        }
+
+        // Initialize entities (enemies, collectibles, clouds) based on the map
+        function initializeEntities() {
+            enemies = [];
+            collectibles = [];
+            clouds = []; // Reset clouds for new game
+            confettiParticles = []; // Clear any lingering confetti
+
+            // Add some initial clouds
+            clouds.push(createCloud(100, 50, 100, 40, 0.5));
+            clouds.push(createCloud(500, 100, 150, 60, 0.3));
+            clouds.push(createCloud(900, 70, 80, 30, 0.6));
+            clouds.push(createCloud(200, 150, 120, 50, 0.4)); // New cloud
+
+            // Create a deep copy of the original map for the current game session
+            for(let i=0; i<originalGameMap.length; i++) {
+                gameMap[i] = [...originalGameMap[i]];
+            }
+
+            for (let row = 0; row < mapHeightTiles; row++) {
+                for (let col = 0; col < mapWidthTiles; col++) {
+                    const tileType = gameMap[row][col];
+                    const px = col * gridSize;
+                    const py = row * gridSize;
+
+                    if (tileType === 'E') {
+                        // Place enemy at the bottom of the tile it spawns in
+                        enemies.push(createEnemy(px, py + gridSize - (gridSize / 2), 2)); // Enemy is gridSize/2 tall
+                        gameMap[row][col] = ' '; // Clear spawn point from map so it doesn't draw a tile
+                    } else if (tileType === 'C') {
+                        collectibles.push(createCollectible(px + gridSize / 4, py + gridSize / 4)); // Center coin in tile
+                        gameMap[row][col] = ' '; // Clear collectible from map
+                    }
+                }
+            }
+        }
+
+        // Get tile type at specific pixel coordinates
+        function getTileAtPixel(px, py) {
+            const tileX = Math.floor(px / gridSize);
+            const tileY = Math.floor(py / gridSize);
+
+            if (tileX >= 0 && tileX < mapWidthTiles && tileY >= 0 && tileY < mapHeightTiles) {
+                return gameMap[tileY][tileX];
+            }
+            return ' '; // Treat out-of-bounds as empty space
+        }
+
+        // Draw a pixel art character
+        function drawCharacter(character, cameraOffset, isWalking = false) {
+            const drawX = character.x - cameraOffset;
+            const drawY = character.y;
+
+            // Determine the size of the individual 'pixels' within the character's shape
+            const charPixelDrawSizeX = character.width / character.shape[0].length;
+            const charPixelDrawSizeY = character.height / character.shape.length;
+
+            let currentShape = character.shape;
+
+            // Basic walking animation for man
+            if (isWalking && character === man) {
+                const step = Math.floor(character.animationFrame / character.animationSpeed) % 2; // 0 or 1
+                if (step === 0) {
+                    currentShape = [
+                        [1], // Head
+                        [2], // Torso
+                        [3], // Pants
+                        [4]  // Feet (normal)
+                    ];
+                } else {
+                    currentShape = [
+                        [1], // Head
+                        [2], // Torso
+                        [3], // Pants
+                        [5]  // Feet (shifted for walking effect)
+                    ];
+                    character.colorMap[5] = '#3d5c80'; // Ensure color for shifted feet
+                }
+            }
+
+            // Apply hit animation (flashing) for the man
+            if (character === man && man.isHit && (Math.floor(man.hitTimer / 5) % 2 === 0)) {
+                // Flash effect: Draw for some frames, skip for others
+                return; // Skip drawing to create a flashing effect
+            }
+
+
+            currentShape.forEach((row, rowIndex) => {
+                row.forEach((pixelType, colIndex) => {
+                    const color = character.colorMap[pixelType];
+                    if (color && color !== 'transparent') {
+                        ctx.fillStyle = color;
+                        ctx.fillRect(
+                            drawX + colIndex * charPixelDrawSizeX,
+                            drawY + rowIndex * charPixelDrawSizeY,
+                            charPixelDrawSizeX,
+                            charPixelDrawSizeY
+                        );
+                    }
+                });
+            });
+        }
+
+        // Draw the game map
+        function drawMap(cameraOffset) {
+            const startCol = Math.floor(cameraOffset / gridSize);
+            const endCol = startCol + Math.ceil(canvas.width / gridSize) + 1;
+
+            for (let row = 0; row < mapHeightTiles; row++) {
+                for (let col = startCol; col < endCol; col++) {
+                    const tileType = getTileAtPixel(col * gridSize, row * gridSize);
+                    const drawX = col * gridSize - cameraOffset;
+                    const drawY = row * gridSize;
+
+                    if (tileType === 'G') {
+                        ctx.fillStyle = '#654321'; // Brown for ground
+                        ctx.fillRect(drawX, drawY, gridSize, gridSize);
+                        // Add some grass tops
+                        ctx.fillStyle = '#228B22'; // Forest green
+                        ctx.fillRect(drawX, drawY, gridSize, gridSize / 4);
+                    } else if (tileType === 'O') {
+                        ctx.fillStyle = '#7f8c8d'; // Grey for obstacles (rocks/bricks)
+                        ctx.fillRect(drawX, drawY, gridSize, gridSize);
+                        // Add simple brick lines
+                        ctx.strokeStyle = '#525e60';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(drawX, drawY + gridSize / 3);
+                        ctx.lineTo(drawX + gridSize, drawY + gridSize / 3);
+                        ctx.moveTo(drawX, drawY + (2 * gridSize) / 3);
+                        ctx.lineTo(drawX + gridSize, drawY + (2 * gridSize) / 3);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(drawX + gridSize / 2, drawY);
+                        ctx.lineTo(drawX + gridSize / 2, drawY + gridSize / 3);
+                        ctx.moveTo(drawX + gridSize / 2, drawY + (2 * gridSize) / 3);
+                        ctx.lineTo(drawX + gridSize / 2, drawY + gridSize);
+                        ctx.stroke();
+
+                    } else if (tileType === 'P') {
+                        ctx.fillStyle = '#27ae60'; // Green for platforms
+                        ctx.fillRect(drawX, drawY, gridSize, gridSize / 2); // Thinner platform
+                        ctx.fillStyle = '#1e8449'; // Darker green underside
+                        ctx.fillRect(drawX, drawY + gridSize / 2, gridSize, gridSize / 2);
+                    }
+                }
+            }
+        }
+
+        // Draw the castle background elements
+        function drawBackground(cameraOffset) {
+            // Sky is handled by canvas background-color CSS
+            const castleColor = '#a9a9a9'; // Dark gray
+            const windowColor = '#fdfd96'; // Light yellow for windows
+            const turretColor = '#808080'; // Slightly darker grey for turret tops
+            const battlementColor = '#696969'; // Even darker grey for battlements
+            const flagColor = '#e74c3c'; // Red for flag
+
+            // Parallax offset for background elements
+            const parallaxOffset = cameraOffset * 0.5;
+            const backgroundRepeatWidth = gridSize * 15; // Increased repeat width for more varied castle elements
+
+            const startDrawX = - (parallaxOffset % backgroundRepeatWidth);
+            const numRepeats = Math.ceil((canvas.width + backgroundRepeatWidth) / backgroundRepeatWidth) + 1;
+
+            for (let i = 0; i < numRepeats + 1; i++) {
+                const currentSectionX = startDrawX + i * backgroundRepeatWidth;
+
+                // --- Base Wall ---
+                ctx.fillStyle = castleColor;
+                ctx.fillRect(currentSectionX, canvas.height - 4 * gridSize, gridSize * 15, 3 * gridSize); // Large wall section
+
+                // --- Main Towers (Taller) ---
+                ctx.fillStyle = turretColor;
+                ctx.fillRect(currentSectionX + 1 * gridSize, canvas.height - 7 * gridSize, 2 * gridSize, 4 * gridSize); // Left tall turret
+                ctx.fillRect(currentSectionX + 12 * gridSize, canvas.height - 7 * gridSize, 2 * gridSize, 4 * gridSize); // Right tall turret
+
+                // --- Smaller Tower ---
+                ctx.fillStyle = turretColor;
+                ctx.fillRect(currentSectionX + 6 * gridSize, canvas.height - 5 * gridSize, 2 * gridSize, 2 * gridSize); // Mid short turret
+
+                // --- Battlement details ---
+                ctx.fillStyle = battlementColor;
+                // Top of walls
+                for (let j = 0; j < 15; j++) { // Across the whole wall section
+                    if (j % 2 === 0) { // Every other block
+                        ctx.fillRect(currentSectionX + j * gridSize, canvas.height - 4 * gridSize, gridSize, gridSize / 2);
+                    }
+                }
+                // Tower battlements
+                ctx.fillRect(currentSectionX + 1 * gridSize, canvas.height - 7 * gridSize - (gridSize / 2), gridSize / 2, gridSize / 2);
+                ctx.fillRect(currentSectionX + 1 * gridSize + gridSize, canvas.height - 7 * gridSize - (gridSize / 2), gridSize / 2, gridSize / 2);
+                ctx.fillRect(currentSectionX + 12 * gridSize, canvas.height - 7 * gridSize - (gridSize / 2), gridSize / 2, gridSize / 2);
+                ctx.fillRect(currentSectionX + 12 * gridSize + gridSize, canvas.height - 7 * gridSize - (gridSize / 2), gridSize / 2, gridSize / 2);
+
+                // --- Windows ---
+                ctx.fillStyle = windowColor;
+                ctx.fillRect(currentSectionX + 3 * gridSize, canvas.height - 3.5 * gridSize, gridSize, gridSize); // Main wall window 1
+                ctx.fillRect(currentSectionX + 9 * gridSize, canvas.height - 3.5 * gridSize, gridSize, gridSize); // Main wall window 2
+
+                ctx.fillRect(currentSectionX + 1.5 * gridSize, canvas.height - 6 * gridSize, gridSize, gridSize / 2); // Left turret window
+                ctx.fillRect(currentSectionX + 12.5 * gridSize, canvas.height - 6 * gridSize, gridSize, gridSize / 2); // Right turret window
+
+                // Arched window (simple representation)
+                ctx.fillStyle = windowColor;
+                ctx.fillRect(currentSectionX + 6.5 * gridSize, canvas.height - 4.5 * gridSize, gridSize, gridSize / 2);
+                ctx.fillRect(currentSectionX + 6.5 * gridSize + gridSize / 4, canvas.height - 4 * gridSize, gridSize / 2, gridSize / 2); // Arch top
+
+
+                // --- Flag ---
+                ctx.fillStyle = flagColor;
+                ctx.fillRect(currentSectionX + 1.5 * gridSize + gridSize / 2 - 2, canvas.height - 7 * gridSize - gridSize - 10, 4, gridSize + 10); // Flagpole
+                ctx.fillRect(currentSectionX + 1.5 * gridSize + gridSize / 2 - 2, canvas.height - 7 * gridSize - gridSize - 10, gridSize, gridSize / 2); // Flag fabric
+            }
+
+            // Draw clouds
+            clouds.forEach(cloud => {
+                ctx.fillStyle = cloud.color;
+                ctx.beginPath();
+                // Simple cloud shape with multiple arcs
+                ctx.arc(cloud.x - parallaxOffset + cloud.width * 0.2, cloud.y + cloud.height * 0.5, cloud.height * 0.5, 0, Math.PI * 2);
+                ctx.arc(cloud.x - parallaxOffset + cloud.width * 0.5, cloud.y + cloud.height * 0.3, cloud.height * 0.7, 0, Math.PI * 2);
+                ctx.arc(cloud.x - parallaxOffset + cloud.width * 0.8, cloud.y + cloud.height * 0.5, cloud.height * 0.6, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        // Function to draw overlay text on the canvas, now supports multiple lines
+        function drawOverlayMessage(message) {
+            ctx.font = 'bold 48px Inter'; // Larger, bold font
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#FFFFFF'; // White text
+            ctx.strokeStyle = '#000000'; // Black outline
+            ctx.lineWidth = 4; // Thicker outline for visibility
+
+            const lines = message.split('\n'); // Split message by newline character
+            const lineHeight = 60; // Adjust line height as needed for spacing
+            const totalTextHeight = lines.length * lineHeight;
+            const startY = (canvas.height / 2) - (totalTextHeight / 2) + (lineHeight / 2); // Center vertically
+
+            const x = canvas.width / 2;
+
+            lines.forEach((line, index) => {
+                const y = startY + (index * lineHeight);
+                ctx.strokeText(line, x, y); // Draw outline
+                ctx.fillText(line, x, y);   // Draw text
+            });
+        }
+
+        // Function to spawn confetti particles
+        function spawnConfetti() {
+            confettiParticles = []; // Clear existing confetti
+            const spawnX = woman.x + woman.width / 2;
+            const spawnY = woman.y + woman.height / 2;
+
+            for (let i = 0; i < 100; i++) { // Spawn 100 particles
+                confettiParticles.push(createConfettiParticle(spawnX, spawnY));
+            }
+        }
+
+
+        // Update game logic (physics, movement, collisions)
+        function updateGame() {
+            if (gameEnded || gameOver) return;
+
+            // --- Apply Gravity to Man ---
+            man.dy += GRAVITY;
+
+            // --- Horizontal Movement for Man ---
+            let movedHorizontally = false;
+            man.dx = 0;
+            if (keys.ArrowLeft || keys.a) {
+                man.dx = -PLAYER_HORIZONTAL_SPEED;
+                movedHorizontally = true;
+            }
+            if (keys.ArrowRight || keys.d) {
+                man.dx = PLAYER_HORIZONTAL_SPEED;
+                movedHorizontally = true;
+            }
+
+            let nextManRectX = { // Rectangle for potential X movement
+                x: man.x + man.dx,
+                y: man.y,
+                width: man.width,
+                height: man.height
+            };
+
+            // Horizontal collision with map boundaries and tiles
+            const x1 = Math.floor(nextManRectX.x / gridSize);
+            const x2 = Math.ceil((nextManRectX.x + nextManRectX.width) / gridSize);
+            const y1 = Math.floor(nextManRectX.y / gridSize);
+            const y2 = Math.ceil((nextManRectX.y + nextManRectX.height) / gridSize);
+
+            for (let row = y1; row < y2; row++) {
+                for (let col = x1; col < x2; col++) {
+                    const tileType = getTileAtPixel(col * gridSize, row * gridSize);
+                    if (['G', 'O', 'P'].includes(tileType)) {
+                        const tileRect = getTileBoundingBox(col, row);
+                        if (intersectRect(nextManRectX, tileRect)) {
+                            if (man.dx > 0) { // Moving right, hit left side of tile
+                                man.x = tileRect.x - man.width;
+                            } else if (man.dx < 0) { // Moving left, hit right side of tile
+                                man.x = tileRect.x + tileRect.width;
+                            }
+                            man.dx = 0; // Stop horizontal movement
+                            break; // Collision resolved, stop checking this row horizontally
+                        }
+                    }
+                }
+            }
+            if (man.dx !== 0) { // Only apply if no collision or resolved without stopping
+                 man.x += man.dx;
+            }
+
+
+            // Update animation frame if moving
+            if (movedHorizontally && man.onGround) {
+                man.animationFrame++;
+            } else {
+                man.animationFrame = 0; // Reset animation when not walking
+            }
+
+
+            // --- Vertical Movement for Man ---
+            let nextManRectY = { // Rectangle for potential Y movement
+                x: man.x, // Use resolved X position
+                y: man.y + man.dy,
+                width: man.width,
+                height: man.height
+            };
+
+            man.onGround = false; // Assume not on ground until proven otherwise
+
+            // Vertical collision with map boundaries and tiles
+            const vy1 = Math.floor(nextManRectY.y / gridSize);
+            const vy2 = Math.ceil((nextManRectY.y + nextManRectY.height) / gridSize);
+            const vx1 = Math.floor(nextManRectY.x / gridSize);
+            const vx2 = Math.ceil((nextManRectY.x + nextManRectY.width) / gridSize);
+
+            for (let row = vy1; row < vy2; row++) {
+                for (let col = vx1; col < vx2; col++) {
+                    const tileType = getTileAtPixel(col * gridSize, row * gridSize);
+                    if (['G', 'O', 'P'].includes(tileType)) {
+                        const tileRect = getTileBoundingBox(col, row);
+                        if (intersectRect(nextManRectY, tileRect)) {
+                            if (man.dy > 0) { // Falling, hit top side of tile
+                                man.y = tileRect.y - man.height;
+                                man.onGround = true; // Landed on ground
+                            } else if (man.dy < 0) { // Jumping/moving up, hit bottom side of tile
+                                man.y = tileRect.y + tileRect.height;
+                            }
+                            man.dy = 0; // Stop vertical movement
+                            break; // Collision resolved, stop checking this row vertically
+                        }
+                    }
+                }
+            }
+            if (man.dy !== 0) { // Only apply if no collision or resolved without stopping
+                man.y += man.dy;
+            }
+
+
+            // Boundary check for falling off the bottom of the map
+            if (man.y > totalMapPixelHeight + gridSize) { // A bit more buffer before game over
+                gameOver = true;
+                messageText = "Game Over!\nYou fell into the void!"; // Updated for multiline
+                restartButton.classList.remove('hidden');
+                return;
+            }
+
+            // Jump input
+            if ((keys.ArrowUp || keys.w) && man.onGround) {
+                man.dy = JUMP_STRENGTH;
+                man.onGround = false;
+            }
+
+            // Update camera position to follow the man, clamped to map boundaries
+            cameraX = man.x - canvas.width / 2 + man.width / 2;
+            cameraX = Math.max(0, Math.min(cameraX, totalMapPixelWidth - canvas.width));
+
+            // --- Update Enemies ---
+            enemies.forEach(enemy => {
+                // Apply gravity to enemy
+                enemy.dy += GRAVITY;
+                enemy.y += enemy.dy;
+
+                let enemyRect = { x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height };
+
+                // Vertical collision for enemy (landing)
+                const enemyTileBelow = getTileAtPixel(enemy.x + enemy.width / 2, enemy.y + enemy.height);
+                if (['G', 'O', 'P'].includes(enemyTileBelow)) {
+                    enemy.y = Math.floor((enemy.y + enemy.height) / gridSize) * gridSize - enemy.height;
+                    enemy.dy = 0;
+                }
+
+                enemy.x += enemy.dx; // Apply horizontal movement
+
+                // Enemy turning logic (wall and ledge detection)
+                let turnAround = false;
+
+                // Check for walls (front of enemy, middle height)
+                let checkX_wall = enemy.dx > 0 ? enemy.x + enemy.width : enemy.x; // Check right if moving right, left if moving left
+                let wallTile = getTileAtPixel(checkX_wall, enemy.y + enemy.height / 2);
+                if (['G', 'O', 'P'].includes(wallTile)) {
+                    turnAround = true;
+                }
+
+                // Check for ledges (below enemy's next step)
+                let checkX_ledge = enemy.dx > 0 ? enemy.x + enemy.width + 1 : enemy.x - 1; // 1 pixel outside current bounds
+                let checkY_ledge = enemy.y + enemy.height + 1; // 1 pixel below enemy's feet
+                let ledgeTile = getTileAtPixel(checkX_ledge, checkY_ledge);
+                if (!['G', 'O', 'P'].includes(ledgeTile)) {
+                    turnAround = true;
+                }
+
+                // Check for map boundaries
+                if (enemy.x <= 0 || enemy.x + enemy.width >= totalMapPixelWidth) {
+                    turnAround = true;
+                }
+
+                if (turnAround) {
+                    enemy.dx *= -1; // Reverse direction
+                }
+            });
+
+
+            // --- Update Clouds ---
+            clouds.forEach(cloud => {
+                cloud.x += cloud.speed;
+                // Wrap around when off screen to the right
+                if (cloud.x - cameraX > canvas.width + cloud.width) {
+                    cloud.x = cameraX - cloud.width - (Math.random() * 200); // Reappear off-screen left
+                    cloud.y = Math.random() * (canvas.height / 3); // Random height in upper third
+                }
+            });
+
+            // --- Update Confetti ---
+            confettiParticles.forEach((p, index) => {
+                p.dy += GRAVITY * 0.5; // Confetti falls slower
+                p.x += p.dx;
+                p.y += p.dy;
+                p.lifetime--;
+
+                if (p.lifetime <= 0) {
+                    confettiParticles.splice(index, 1); // Remove expired particles
+                }
+            });
+
+
+            // --- Check Collisions (Man vs. Enemies, Man vs. Collectibles) ---
+            enemies.forEach(enemy => {
+                if (!man.isHit && // Only take damage if not currently invincible
+                    man.x < enemy.x + enemy.width &&
+                    man.x + man.width > enemy.x &&
+                    man.y < enemy.y + enemy.height &&
+                    man.y + man.height > enemy.y
+                ) {
+                    gameOver = true;
+                    messageText = "Game Over!\nYou were caught by an enemy!"; // Updated for multiline
+                    restartButton.classList.remove('hidden');
+                }
+            });
+
+            // Handle man being hit (invincibility timer)
+            if (man.isHit) {
+                man.hitTimer--;
+                if (man.hitTimer <= 0) {
+                    man.isHit = false; // Invincibility wears off
+                }
+            }
+
+
+            collectibles.forEach((collectible, index) => {
+                if (!collectible.collected &&
+                    man.x < collectible.x + collectible.width &&
+                    man.x + man.width > collectible.x &&
+                    man.y < collectible.y + collectible.height &&
+                    man.y + man.height > collectible.y
+                ) {
+                    collectible.collected = true;
+                    score += 100; // Add score for collecting
+                    scoreDisplay.textContent = `Score: ${score}`;
+                }
+            });
+
+            // Check for rescue collision
+            checkRescueCollision();
+        }
+
+        // Check if man has rescued the woman
+        function checkRescueCollision() {
+            if (
+                man.x < woman.x + woman.width &&
+                man.x + man.width > woman.x &&
+                man.y < woman.y + woman.height &&
+                man.y + man.height > woman.y
+            ) {
+                if (!gameEnded) { // Only trigger confetti once
+                    spawnConfetti();
+                }
+                gameEnded = true;
+                messageText = "You rescued her!\nCongratulations!"; // Updated for multiline
+                restartButton.classList.remove('hidden');
+            }
+        }
+
+        // Draw everything on the canvas
+        function drawGame() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the canvas
+
+            drawBackground(cameraX); // Draw the castle background and clouds
+            drawMap(cameraX); // Draw the scrolling map
+
+            // Draw enemies
+            enemies.forEach(enemy => {
+                ctx.fillStyle = enemy.color;
+                ctx.fillRect(enemy.x - cameraX, enemy.y, enemy.width, enemy.height);
+            });
+
+            // Draw collectibles
+            collectibles.forEach(collectible => {
+                if (!collectible.collected) {
+                    ctx.fillStyle = collectible.color;
+                    ctx.beginPath();
+                    ctx.arc(collectible.x - cameraX + collectible.width / 2, collectible.y + collectible.height / 2, collectible.width / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#e67e22'; // Darker orange for coin outline
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            });
+
+            drawCharacter(man, cameraX, man.dx !== 0); // Pass true for walking animation if moving
+            drawCharacter(woman, cameraX);
+
+            // Draw confetti particles
+            confettiParticles.forEach(p => {
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x - cameraX, p.y, p.size, p.size);
+            });
+
+            // Draw overlay messages if game is ended or over
+            if (gameEnded || gameOver) {
+                drawOverlayMessage(messageText);
+            }
+        }
+
+        // Reset game state for restart
+        function resetGame() {
+            gameEnded = false;
+            gameOver = false;
+            score = 0;
+            scoreDisplay.textContent = `Score: ${score}`;
+            messageText = "Use Arrow Keys (Left/Right/Up)\nor Touch Controls to move and jump!"; // Reset initial message
+            restartButton.classList.add('hidden');
+
+            // Re-initialize map and entities for a fresh start
+            initializeEntities();
+            resizeGame(); // Re-position man and woman, redraw
+            man.dx = 0; man.dy = 0; // Reset velocities
+            man.onGround = false;
+            man.isHit = false; // Reset hit state
+            man.hitTimer = 0; // Reset hit timer
+            confettiParticles = []; // Clear confetti
+
+            // Ensure game loop is running if it stopped due to game over/win
+            requestAnimationFrame(gameLoop);
+        }
+
+
+        // Game loop
+        function gameLoop() {
+            updateGame(); // Update game state
+            drawGame();   // Redraw based on new state
+            if (!gameEnded && !gameOver) {
+                requestAnimationFrame(gameLoop); // Keep looping if game is not over
+            }
+        }
+
+        // Initialize the game when the window loads
+        window.onload = function () {
+            initializeEntities(); // Populate enemies and collectibles based on map
+            resizeGame(); // Initial resize and character/woman placement
+            window.addEventListener('resize', resizeGame); // Add resize listener
+            gameLoop(); // Start the game loop
+        };
+    </script>
+</body>
+</html>
