@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pixel Rescue Side-Scroller</title>
+    <title>Help Haroon rescue Saaniya!</title>
     <!-- Tailwind CSS CDN for general page styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
@@ -102,7 +102,7 @@
             transform: translateY(2px); /* Press effect */
         }
 
-        .restart-button {
+        .restart-button, .next-level-button { /* Added .next-level-button */
             background-color: #e53e3e; /* Red for restart */
             color: white;
             padding: 0.75rem 1.5rem;
@@ -116,7 +116,11 @@
             margin-top: 1rem;
         }
 
-        .restart-button:active {
+        .next-level-button { /* Style specifically for next level button */
+            background-color: #28a745; /* Green for next level */
+        }
+
+        .restart-button:active, .next-level-button:active {
             background-color: #c53030;
             transform: translateY(2px);
         }
@@ -137,9 +141,10 @@
 </head>
 <body>
     <div class="game-container">
-        <h1 class="text-3xl sm:text-4xl font-bold text-white mb-4 text-center">Rescue The Princess!</h1>
+        <h1 class="text-3xl sm:text-4xl font-bold text-white mb-4 text-center">Help Haroon rescue Saaniya!</h1>
         <div class="game-info">
             <span id="scoreDisplay">Score: 0</span>
+            <span id="levelDisplay">Level: 1</span>
         </div>
         <div id="message-box" class="message-box">Use Arrow Keys (Left/Right/Up) or Touch Controls to move and jump!</div>
         <canvas id="gameCanvas"></canvas>
@@ -149,6 +154,7 @@
             <button id="rightButton" class="control-button">▶</button>
         </div>
         <button id="restartButton" class="restart-button hidden">Restart Game</button>
+        <button id="nextLevelButton" class="next-level-button hidden">Next Level</button> <!-- New button for next level -->
     </div>
 
     <script type="module">
@@ -163,6 +169,8 @@
         const PLAYER_HORIZONTAL_SPEED = 6;
         let cameraX = 0; // Current camera offset for horizontal scrolling
         let cameraY = 0; // Current camera offset for vertical positioning (fixed to bottom of map)
+        let gameLoopId = null; // To store the ID returned by requestAnimationFrame
+        let gameFrameCounter = 0; // New: for consistent animation and enemy movement
 
         // Character definitions
         // Man (rescuer) - 8 rows x 4 columns for detail within 1 tile width, 2 tiles height
@@ -239,17 +247,55 @@
             }
         };
 
+        // Standard Enemy (Ground-based)
+        const groundEnemyType = {
+            shape: [
+                [0, 0, 0, 0],
+                [0, 1, 1, 0], // Head/Eyes
+                [1, 2, 2, 1], // Body top
+                [1, 2, 2, 1], // Body middle
+                [1, 1, 1, 1], // Body bottom
+                [0, 3, 3, 0], // Legs/Feet
+                [0, 0, 0, 0]
+            ],
+            colorMap: {
+                0: 'transparent',
+                1: '#8B0000', // Dark Red body
+                2: '#FF4500', // Orange-red highlights / eyes
+                3: '#5C4033'  // Dark brown feet/base
+            },
+            width: gridSize,
+            height: gridSize
+        };
+
+        // Flying Enemy
+        const flyingEnemyType = {
+            shape: [
+                [0, 0, 0, 0],
+                [1, 1, 1, 1], // Top wing segment
+                [0, 2, 2, 0], // Body/eye
+                [1, 1, 1, 1], // Bottom wing segment
+                [0, 3, 3, 0], // Tail
+                [0, 0, 0, 0]
+            ],
+            colorMap: {
+                0: 'transparent',
+                1: '#FFD700', // Gold wings
+                2: '#DAA520', // Goldenrod body / shade
+                3: '#8B0000'  // Dark Red for eyes/tail tip
+            },
+            width: gridSize,
+            height: gridSize
+        };
+
+
         // Enemy definition
-        function createEnemy(x, y, speed) {
-            return {
-                x: x,
-                y: y,
-                width: gridSize,
-                height: gridSize,
-                dx: speed,
-                dy: 0, // Enemies also have vertical velocity for gravity
-                color: '#c0392b' // Dark red
-            };
+        function createEnemy(x, y, speed, type = 'ground') {
+            const enemyBase = { x, y, dx: speed, dy: 0, width: gridSize, height: gridSize };
+            if (type === 'flying') {
+                return { ...enemyBase, ...flyingEnemyType, initialY: y, verticalAmplitude: 30, verticalSpeed: 0.05, type: 'flying' }; // Reduced amplitude for smoother move
+            }
+            return { ...enemyBase, ...groundEnemyType, type: 'ground' };
         }
         let enemies = [];
 
@@ -288,35 +334,46 @@
         let confettiParticles = []; // Array to hold confetti particles
 
 
-        // Original Game Map for resetting (do not modify this directly during game)
-        // 'G' = Ground, 'O' = Obstacle, ' ' = Air, 'P' = Platform, 'E' = Enemy Spawn, 'C' = Collectible
-        const originalGameMap = [
-            // Level design (approx 40 tiles wide for a decent length)
-            // Row 0 (Sky)
-            [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
-            [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
-            [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
-            [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
-            // Row 4 (Higher Platforms)
-            [' ', ' ', ' ', ' ', ' ', ' ', ' ', 'C', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', ' ', ' ', ' ', 'C', ' ', ' ', ' ', 'C'], // C added, last C
-            // Row 5 (Mid-level Platforms/Obstacles)
-            [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
-            // Row 6 (More Platforms)
-            [' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', 'E', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' '], // E for enemy, C for collectible
-            // Row 7 (Main Ground and Gaps)
-            ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', 'C', ' ', 'O', 'O', 'O', ' ', ' ', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G'], // C added
-            // Row 8 (Obstacles/Ground)
-            ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', ' ', ' ', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G'],
-            // Row 9 (Bottom Layer - for falling into void)
-            ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G']
-        ];
-        // The game's active map, which can be modified (e.g., by collecting items)
-        let gameMap = [];
-
-        const mapWidthTiles = originalGameMap[0].length;
-        const mapHeightTiles = originalGameMap.length;
-        const totalMapPixelWidth = mapWidthTiles * gridSize;
-        const totalMapPixelHeight = mapHeightTiles * gridSize;
+        // Game Maps (separated by level)
+        const gameMaps = {
+            1: [
+                // Row 0 (Sky)
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                // Row 4 (Higher Platforms)
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', 'C', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', ' ', ' ', ' ', 'C', ' ', ' ', ' ', 'C'],
+                // Row 5 (Mid-level Platforms/Obstacles)
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                // Row 6 (More Platforms)
+                [' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', 'E', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' '],
+                // Row 7 (Main Ground and Gaps)
+                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', 'C', ' ', 'O', 'O', 'O', ' ', ' ', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G'],
+                // Row 8 (Obstacles/Ground)
+                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', ' ', ' ', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G'],
+                // Row 9 (Bottom Layer - for falling into void)
+                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G']
+            ],
+            2: [ // Level 2 - More challenging!
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'E', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // Platform with enemy wider
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', 'O', 'O', ' ', ' ', 'F', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // Obstacle is now 5 blocks wide, 'F' flying enemy strategically placed
+                [' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', 'E', ' ', 'C', ' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' '], // New platform, new enemy
+                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', ' ', 'G', 'G', 'G', 'O', 'O', 'O', 'O', 'O', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', 'G', 'G', 'G', 'G', 'G'], // Taller obstacle after pit, 'O' is 2 tiles tall
+                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', ' ', 'G', 'G', 'G', 'O', 'O', 'O', 'O', 'O', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', 'G', 'G', 'G', 'G', 'G'],
+                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G']
+            ]
+        };
+        let currentLevel = 1;
+        let gameMap = []; // The game's active map, which can be modified
+        let mapWidthTiles;
+        let mapHeightTiles;
+        let totalMapPixelWidth;
+        let totalMapPixelHeight;
 
         // Game state variables
         let gameEnded = false; // When woman is rescued
@@ -326,7 +383,9 @@
         let messageTimer = 180; // Display initial message for 3 seconds (60 frames per second * 3)
         let initialMessageActive = true; // New flag for initial message state
         let scoreDisplay = document.getElementById('scoreDisplay');
+        let levelDisplay = document.getElementById('levelDisplay'); // New element for level display
         let restartButton = document.getElementById('restartButton');
+        let nextLevelButton = document.getElementById('nextLevelButton'); // Reference to the new button
 
         // Keyboard input handling
         const keys = {
@@ -356,7 +415,15 @@
         const leftButton = document.getElementById('leftButton');
         const rightButton = document.getElementById('rightButton');
         const jumpButton = document.getElementById('jumpButton');
-        restartButton.addEventListener('click', resetGame);
+        restartButton.addEventListener('click', () => {
+            // No longer reset to level 1 on 'restart' button click.
+            // It will just restart the current level.
+            resetGame();
+        });
+        nextLevelButton.addEventListener('click', () => {
+            currentLevel++;
+            resetGame();
+        });
 
         function handleButtonPress(key, isPressed) {
             if (keys.hasOwnProperty(key)) {
@@ -416,6 +483,9 @@
             // Get actual restart button height, accounting for 'hidden' class
             const restartButtonElement = document.getElementById('restartButton');
             const restartButtonHeight = restartButtonElement.classList.contains('hidden') ? 0 : restartButtonElement.offsetHeight;
+            const nextLevelButtonElement = document.getElementById('nextLevelButton'); // Get next level button height
+            const nextLevelButtonHeight = nextLevelButtonElement.classList.contains('hidden') ? 0 : nextLevelButtonElement.offsetHeight;
+
 
             // Calculate available width and height for canvas within the container,
             // subtracting static UI elements and container's own padding/margins.
@@ -423,10 +493,12 @@
             let availableWidth = gameContainer.clientWidth - containerPaddingX;
             // Subtract UI elements from container's clientHeight, not viewport.
             // Use clientHeight of gameContainer as available space, not window.innerHeight.
-            let availableHeight = gameContainer.clientHeight - containerPaddingY - headerHeight - gameInfoHeight - controlsHeight - restartButtonHeight;
+            let uiElementsTotalHeight = headerHeight + gameInfoHeight + controlsHeight + restartButtonHeight + nextLevelButtonHeight + containerPaddingY;
 
             // Add a small buffer to prevent elements from touching edges too much
-            availableHeight -= 10; // Extra buffer for vertical space
+            uiElementsTotalHeight += 20; // Extra buffer for vertical space
+
+            let availableHeight = window.innerHeight - uiElementsTotalHeight;
 
             // Determine optimal canvas dimensions maintaining 16:9 aspect ratio
             let targetWidth = availableWidth;
@@ -487,9 +559,17 @@
             clouds.push(createCloud(900, 70, 80, 30, 0.6));
             clouds.push(createCloud(200, 150, 120, 50, 0.4));
 
+            // Use the current level's map data
+            const currentMapData = gameMaps[currentLevel];
+            mapWidthTiles = currentMapData[0].length;
+            mapHeightTiles = currentMapData.length;
+            totalMapPixelWidth = mapWidthTiles * gridSize;
+            totalMapPixelHeight = mapHeightTiles * gridSize;
+
+
             // Create a deep copy of the original map for the current game session
-            for(let i=0; i<originalGameMap.length; i++) {
-                gameMap[i] = [...originalGameMap[i]];
+            for(let i=0; i<currentMapData.length; i++) {
+                gameMap[i] = [...currentMapData[i]];
             }
 
             for (let row = 0; row < mapHeightTiles; row++) {
@@ -499,11 +579,15 @@
                     const py = row * gridSize;
 
                     if (tileType === 'E') {
-                        // Place enemy at the bottom of the tile it spawns in
-                        // Enemy is 1 tile tall, so its y should be gridY + gridSize - enemy.height
-                        enemies.push(createEnemy(px, py + gridSize - (gridSize), 2));
+                        // Place ground enemy
+                        enemies.push(createEnemy(px, py + gridSize - (groundEnemyType.height), 2, 'ground'));
                         gameMap[row][col] = ' '; // Clear spawn point from map so it doesn't draw a tile
-                    } else if (tileType === 'C') {
+                    } else if (tileType === 'F') {
+                         // Place flying enemy, slightly above the tile
+                        enemies.push(createEnemy(px, py - (flyingEnemyType.height / 2), 1.5, 'flying'));
+                        gameMap[row][col] = ' '; // Clear spawn point
+                    }
+                    else if (tileType === 'C') {
                         collectibles.push(createCollectible(px + gridSize / 4, py + gridSize / 4)); // Center coin in tile
                         gameMap[row][col] = ' '; // Clear collectible from map
                     }
@@ -522,34 +606,30 @@
             return ' '; // Treat out-of-bounds as empty space
         }
 
-        // Draw a pixel art character
+        // Draw a pixel art character (man/woman/enemy)
         function drawCharacter(character, cameraX, isWalking = false) {
             const drawX = character.x - cameraX;
             const drawY = character.y - cameraY; // Apply global cameraY offset
 
             // Determine the size of the individual 'pixels' within the character's shape
+            // Assumes character.shape[0].length is consistent for all rows
             const charPixelDrawSizeX = character.width / character.shape[0].length;
             const charPixelDrawSizeY = character.height / character.shape.length;
 
             let currentShape = character.shape;
 
-            // Basic walking animation for man
+            // Apply walking animation for man
             if (isWalking && character === man) {
                 const step = Math.floor(character.animationFrame / character.animationSpeed) % 2; // 0 or 1
-                if (step === 0) {
-                    currentShape = man.shape; // Default shape
-                } else {
-                    currentShape = man.walkingShape; // Alternate shape for walking
-                }
+                currentShape = (step === 0) ? man.shape : man.walkingShape;
             }
 
             // Apply hit animation (flashing) for the man
             if (character === man && man.isHit && (Math.floor(man.hitTimer / 5) % 2 === 0)) {
-                // Flash effect: Draw for some frames, skip for others
                 return; // Skip drawing to create a flashing effect
             }
 
-
+            // Draw each pixel of the character's shape
             currentShape.forEach((row, rowIndex) => {
                 row.forEach((pixelType, colIndex) => {
                     const color = character.colorMap[pixelType];
@@ -567,7 +647,7 @@
         }
 
         // Draw the game map
-        function drawMap(cameraX, cameraY) { // Now takes cameraY
+        function drawMap(cameraX, cameraY) {
             const startCol = Math.floor(cameraX / gridSize);
             const endCol = startCol + Math.ceil(canvas.width / gridSize) + 1;
 
@@ -575,7 +655,7 @@
                 for (let col = startCol; col < endCol; col++) {
                     const tileType = getTileAtPixel(col * gridSize, row * gridSize);
                     const drawX = col * gridSize - cameraX;
-                    const drawY = row * gridSize - cameraY; // Apply cameraY here
+                    const drawY = row * gridSize - cameraY;
 
                     if (tileType === 'G') {
                         ctx.fillStyle = '#654321'; // Brown for ground
@@ -586,19 +666,27 @@
                     } else if (tileType === 'O') {
                         ctx.fillStyle = '#7f8c8d'; // Grey for obstacles (rocks/bricks)
                         ctx.fillRect(drawX, drawY, gridSize, gridSize);
-                        // Add simple brick lines
+                        // Add simple brick lines for castle-like appearance
                         ctx.strokeStyle = '#525e60';
                         ctx.lineWidth = 2;
+                        // Horizontal lines
                         ctx.beginPath();
-                        ctx.moveTo(drawX, drawY + gridSize / 3);
-                        ctx.lineTo(drawX + gridSize, drawY + gridSize / 3);
-                        ctx.moveTo(drawX, drawY + (2 * gridSize) / 3);
-                        ctx.lineTo(drawX + gridSize, drawY + (2 * gridSize) / 3);
+                        ctx.moveTo(drawX, drawY + gridSize / 4);
+                        ctx.lineTo(drawX + gridSize, drawY + gridSize / 4);
+                        ctx.moveTo(drawX, drawY + gridSize / 2);
+                        ctx.lineTo(drawX + gridSize, drawY + gridSize / 2);
+                        ctx.moveTo(drawX, drawY + (3 * gridSize) / 4);
+                        ctx.lineTo(drawX + gridSize, drawY + (3 * gridSize) / 4);
                         ctx.stroke();
+                        // Vertical lines (staggered)
                         ctx.beginPath();
                         ctx.moveTo(drawX + gridSize / 2, drawY);
-                        ctx.lineTo(drawX + gridSize / 2, drawY + gridSize / 3);
-                        ctx.moveTo(drawX + gridSize / 2, drawY + (2 * gridSize) / 3);
+                        ctx.lineTo(drawX + gridSize / 2, drawY + gridSize / 4);
+                        ctx.moveTo(drawX + gridSize / 4, drawY + gridSize / 2);
+                        ctx.lineTo(drawX + gridSize / 4, drawY + (3 * gridSize) / 4);
+                        ctx.moveTo(drawX + (3 * gridSize) / 4, drawY + gridSize / 4);
+                        ctx.lineTo(drawX + (3 * gridSize) / 4, drawY + gridSize / 2);
+                        ctx.moveTo(drawX + gridSize / 2, drawY + (3 * gridSize) / 4);
                         ctx.lineTo(drawX + gridSize / 2, drawY + gridSize);
                         ctx.stroke();
 
@@ -613,54 +701,70 @@
         }
 
         // Draw the castle background elements
-        function drawBackground(cameraX, cameraY) { // Now takes cameraY
-            // Sky is handled by canvas background-color CSS
-            const castleColor = '#a9a9a9'; // Dark gray
-            const windowColor = '#fdfd96'; // Light yellow for windows
-            const turretColor = '#808080'; // Slightly darker grey for turret tops
-            const battlementColor = '#696969'; // Even darker grey for battlements
-            const flagColor = '#e74c3c'; // Red for flag
+        function drawBackground(cameraX, cameraY) {
+            // Sky is handled by canvas background-color CSS (light blue)
+            ctx.fillStyle = '#7da5d9'; // Sky blue
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const castleColor = '#a9a9a9';
+            const windowColor = '#fdfd96';
+            const turretColor = '#808080';
+            const battlementColor = '#696969';
+            const flagColor = '#e74c3c';
+            const deepGroundColor = '#212121'; // Dark, earthy color for deep ground/void
+
+            // Calculate the absolute Y coordinate of the main ground level in the world
+            // (assuming row 7 is where the main ground starts in the map data)
+            const mapGroundAbsoluteY = totalMapPixelHeight - (mapHeightTiles - 7) * gridSize;
+
+            // Draw the deep ground/void layer, extending downwards from the visible ground level
+            // This fills any area below the playable map's ground that the camera might show
+            ctx.fillStyle = deepGroundColor;
+            ctx.fillRect(0, mapGroundAbsoluteY - cameraY, canvas.width, canvas.height - (mapGroundAbsoluteY - cameraY));
 
             // Parallax offset for background elements
             const parallaxOffsetX = cameraX * 0.5;
             const parallaxOffsetY = cameraY * 0.5; // Apply parallax to Y as well
-            const backgroundRepeatWidth = gridSize * 15; // Increased repeat width for more varied castle elements
+
+            const backgroundRepeatWidth = gridSize * 15;
 
             const startDrawX = - (parallaxOffsetX % backgroundRepeatWidth);
             const numRepeats = Math.ceil((canvas.width + backgroundRepeatWidth) / backgroundRepeatWidth) + 1;
 
-            // The base of the castle walls should align with the ground level of the map
-            // Calculate base Y relative to the map's total height
-            const groundLevelMapY = totalMapPixelHeight - (mapHeightTiles - 7) * gridSize; // Assuming row 7 is the main ground line
+            // Define castle base drawing Y relative to mapGroundAbsoluteY
+            const castleTopRelativeToGround = 3 * gridSize; // How many grid units the castle wall extends UP from the map ground
+            const castleWallDrawY = mapGroundAbsoluteY - castleTopRelativeToGround - parallaxOffsetY;
 
+            // Define how much the castle extends *below* the visible map ground
+            const castleFoundationDepth = 5 * gridSize; // Extend 5 grid units below ground
+            
             for (let i = 0; i < numRepeats + 1; i++) {
                 const currentSectionX = startDrawX + i * backgroundRepeatWidth;
 
-                // --- Base Wall ---
-                // Y position relative to map ground: groundLevelMapY - (3 * gridSize)
-                const wallDrawY = (groundLevelMapY - (3 * gridSize)) - parallaxOffsetY;
+                // --- Base Wall (extended downwards) ---
+                const wallTotalHeight = castleTopRelativeToGround + castleFoundationDepth;
                 ctx.fillStyle = castleColor;
-                ctx.fillRect(currentSectionX, wallDrawY, gridSize * 15, 3 * gridSize); // Large wall section
+                ctx.fillRect(currentSectionX, castleWallDrawY, gridSize * 15, wallTotalHeight);
 
                 // --- Main Towers (Taller) ---
-                // Y position relative to map ground: groundLevelMapY - (6 * gridSize)
-                const mainTurretDrawY = (groundLevelMapY - (6 * gridSize)) - parallaxOffsetY;
+                const mainTurretHeight = 4 * gridSize;
+                const mainTurretDrawY = castleWallDrawY - mainTurretHeight; // Relative to the top of the wall
                 ctx.fillStyle = turretColor;
-                ctx.fillRect(currentSectionX + 1 * gridSize, mainTurretDrawY, 2 * gridSize, 4 * gridSize); // Left tall turret
-                ctx.fillRect(currentSectionX + 12 * gridSize, mainTurretDrawY, 2 * gridSize, 4 * gridSize); // Right tall turret
+                ctx.fillRect(currentSectionX + 1 * gridSize, mainTurretDrawY, 2 * gridSize, mainTurretHeight); // Left tall turret
+                ctx.fillRect(currentSectionX + 12 * gridSize, mainTurretDrawY, 2 * gridSize, mainTurretHeight); // Right tall turret
 
                 // --- Smaller Tower ---
-                // Y position relative to map ground: groundLevelMapY - (4 * gridSize)
-                const shortTurretDrawY = (groundLevelMapY - (4 * gridSize)) - parallaxOffsetY;
+                const shortTurretHeight = 2 * gridSize;
+                const shortTurretDrawY = castleWallDrawY - shortTurretHeight; // Relative to the top of the wall
                 ctx.fillStyle = turretColor;
-                ctx.fillRect(currentSectionX + 6 * gridSize, shortTurretDrawY, 2 * gridSize, 2 * gridSize); // Mid short turret
+                ctx.fillRect(currentSectionX + 6 * gridSize, shortTurretDrawY, 2 * gridSize, shortTurretHeight); // Mid short turret
 
                 // --- Battlement details ---
                 ctx.fillStyle = battlementColor;
                 // Top of walls
                 for (let j = 0; j < 15; j++) {
                     if (j % 2 === 0) {
-                        ctx.fillRect(currentSectionX + j * gridSize, wallDrawY, gridSize, gridSize / 2);
+                        ctx.fillRect(currentSectionX + j * gridSize, castleWallDrawY, gridSize, gridSize / 2);
                     }
                 }
                 // Tower battlements (adjust relative to their turret base)
@@ -671,8 +775,8 @@
 
                 // --- Windows ---
                 ctx.fillStyle = windowColor;
-                ctx.fillRect(currentSectionX + 3 * gridSize, wallDrawY + (0.5 * gridSize), gridSize, gridSize); // Main wall window 1
-                ctx.fillRect(currentSectionX + 9 * gridSize, wallDrawY + (0.5 * gridSize), gridSize, gridSize); // Main wall window 2
+                ctx.fillRect(currentSectionX + 3 * gridSize, castleWallDrawY + (0.5 * gridSize), gridSize, gridSize); // Main wall window 1
+                ctx.fillRect(currentSectionX + 9 * gridSize, castleWallDrawY + (0.5 * gridSize), gridSize, gridSize); // Main wall window 2
 
                 ctx.fillRect(currentSectionX + 1.5 * gridSize, mainTurretDrawY + gridSize, gridSize, gridSize / 2); // Left turret window
                 ctx.fillRect(currentSectionX + 12.5 * gridSize, mainTurretDrawY + gridSize, gridSize, gridSize / 2); // Right turret window
@@ -889,6 +993,7 @@
                     gameOver = true;
                     messageText = "Game Over!\nYou fell into the void!"; // Updated for multiline
                     restartButton.classList.remove('hidden');
+                    nextLevelButton.classList.add('hidden'); // Hide next level button on game over
                     return; // Exit updateGame for this frame as game is over
                 }
 
@@ -900,58 +1005,91 @@
 
                 // Update Enemies (only if game is active)
                 enemies.forEach(enemy => {
-                    // Apply gravity to enemy
-                    enemy.dy += GRAVITY;
-                    enemy.y += enemy.dy;
+                    if (enemy.type === 'ground') {
+                        // Apply gravity to enemy
+                        enemy.dy += GRAVITY;
+                        enemy.y += enemy.dy;
 
-                    // Vertical collision for enemy (landing)
-                    let nextEnemyY = enemy.y + enemy.dy;
-                    const enemyBottomTileRow = Math.floor((nextEnemyY + enemy.height) / gridSize);
-                    const enemyLeftCol = Math.floor(enemy.x / gridSize);
-                    const enemyRightCol = Math.floor((enemy.x + enemy.width - 1) / gridSize);
+                        // Vertical collision for enemy (landing)
+                        let nextEnemyY = enemy.y + enemy.dy;
+                        const enemyBottomTileRow = Math.floor((nextEnemyY + enemy.height) / gridSize);
+                        const enemyLeftCol = Math.floor(enemy.x / gridSize);
+                        const enemyRightCol = Math.floor((enemy.x + enemy.width - 1) / gridSize);
 
-                    let enemyOnGround = false;
-                    for (let col = enemyLeftCol; col <= enemyRightCol; col++) {
-                        const tileType = getTileAtPixel(col * gridSize, enemyBottomTileRow * gridSize);
-                        if (['G', 'O', 'P'].includes(tileType)) {
-                            const tileRect = getTileBoundingBox(col, enemyBottomTileRow);
-                            if (intersectRect({ x: enemy.x, y: nextEnemyY, width: enemy.width, height: enemy.height }, tileRect)) {
-                                enemy.y = tileRect.y - enemy.height; // Snap to top of tile
-                                enemy.dy = 0;
-                                enemyOnGround = true;
-                                break;
+                        let enemyOnGround = false;
+                        for (let col = enemyLeftCol; col <= enemyRightCol; col++) {
+                            const tileType = getTileAtPixel(col * gridSize, enemyBottomTileRow * gridSize);
+                            if (['G', 'O', 'P'].includes(tileType)) {
+                                const tileRect = getTileBoundingBox(col, enemyBottomTileRow);
+                                if (intersectRect({ x: enemy.x, y: nextEnemyY, width: enemy.width, height: enemy.height }, tileRect)) {
+                                    enemy.y = tileRect.y - enemy.height; // Snap to top of tile
+                                    enemy.dy = 0;
+                                    enemyOnGround = true;
+                                    break;
+                                }
                             }
                         }
-                    }
 
-                    enemy.x += enemy.dx; // Apply horizontal movement
+                        enemy.x += enemy.dx; // Apply horizontal movement
 
-                    // Enemy turning logic (wall and ledge detection)
-                    let turnAround = false;
+                        // Enemy turning logic (wall and ledge detection and princess boundary)
+                        let turnAround = false;
 
-                    // Check for walls at current position after horizontal move
-                    let checkX_wall_current = enemy.dx > 0 ? enemy.x + enemy.width : enemy.x;
-                    let wallTile_current = getTileAtPixel(checkX_wall_current, enemy.y + enemy.height / 2);
-                    if (['G', 'O', 'P'].includes(wallTile_current)) {
-                        turnAround = true;
-                    }
+                        // Check for walls at current position after horizontal move
+                        let checkX_wall_current = enemy.dx > 0 ? enemy.x + enemy.width : enemy.x;
+                        let wallTile_current = getTileAtPixel(checkX_wall_current, enemy.y + enemy.height / 2);
+                        if (['G', 'O', 'P'].includes(wallTile_current)) {
+                            turnAround = true;
+                        }
 
-                    // Check for ledges (ahead of current position, below feet)
-                    let checkX_ledge = enemy.dx > 0 ? enemy.x + enemy.width + 1 : enemy.x - 1; // 1 pixel outside current bounds
-                    let checkY_ledge = enemy.y + enemy.height + 1; // 1 pixel below enemy's feet
-                    let ledgeTile = getTileAtPixel(checkX_ledge, checkY_ledge);
+                        // Check for ledges (ahead of current position, below feet)
+                        let checkX_ledge = enemy.dx > 0 ? enemy.x + enemy.width + 1 : enemy.x - 1; // 1 pixel outside current bounds
+                        let checkY_ledge = enemy.y + enemy.height + 1; // 1 pixel below enemy's feet
+                        let ledgeTile = getTileAtPixel(checkX_ledge, checkY_ledge);
 
-                    if (enemyOnGround && !['G', 'O', 'P'].includes(ledgeTile)) {
-                        turnAround = true;
-                    }
+                        if (enemyOnGround && !['G', 'O', 'P'].includes(ledgeTile)) {
+                            turnAround = true;
+                        }
 
-                    // Check for map boundaries
-                    if (enemy.x < 0 || enemy.x + enemy.width > totalMapPixelWidth) {
-                        turnAround = true;
-                    }
+                        // Check for map boundaries
+                        if (enemy.x < 0 || enemy.x + enemy.width > totalMapPixelWidth) {
+                            turnAround = true;
+                        }
 
-                    if (turnAround) {
-                        enemy.dx *= -1; // Reverse direction
+                        // NEW: Enemy does not go past the woman's initial spawn X (left side)
+                        // For Level 1 ground enemy, it should patrol the platform and not go past woman.x
+                        if (currentLevel === 1) {
+                            const patrolLeftBound = 24 * gridSize; // Column 24 (where enemy spawns)
+                            const patrolRightBound = woman.x; // Woman's initial X is the right boundary
+
+                            if (enemy.dx > 0 && enemy.x + enemy.width >= patrolRightBound) {
+                                turnAround = true;
+                            } else if (enemy.dx < 0 && enemy.x <= patrolLeftBound) {
+                                turnAround = true;
+                            }
+                        } else {
+                             // General map boundary check for other levels' ground enemies
+                             if (enemy.x < 0 || enemy.x + enemy.width > totalMapPixelWidth) {
+                                turnAround = true;
+                            }
+                        }
+
+                        if (turnAround) {
+                            enemy.dx *= -1; // Reverse direction
+                        }
+                    } else if (enemy.type === 'flying') {
+                        // Flying enemy movement: oscillate vertically and move horizontally
+                        enemy.y = enemy.initialY + Math.sin(gameFrameCounter * enemy.verticalSpeed) * enemy.verticalAmplitude;
+                        enemy.x += enemy.dx;
+
+                        // Reverse horizontal direction if hitting map boundaries or princess boundary
+                        if (enemy.x < 0 || enemy.x + enemy.width > totalMapPixelWidth) {
+                            enemy.dx *= -1;
+                        }
+                        // To prevent flying enemy from passing princess's approximate area:
+                        // This logic should be carefully applied based on flying enemy's spawn location relative to woman.
+                        // For Level 2, the flying enemy is far from the princess. It just needs to stay in bounds.
+                        // The general map boundary check above is sufficient for flying enemies if they are not near the princess.
                     }
                 });
 
@@ -966,6 +1104,7 @@
                         gameOver = true;
                         messageText = "Game Over!\nYou were caught by an enemy!"; // Updated for multiline
                         restartButton.classList.remove('hidden');
+                        nextLevelButton.classList.add('hidden'); // Hide next level button on game over
                     }
                 });
 
@@ -1038,8 +1177,15 @@
                     spawnConfetti();
                 }
                 gameEnded = true;
-                messageText = "You rescued her!\nCongratulations!"; // Updated for multiline
-                restartButton.classList.remove('hidden');
+                if (currentLevel < Object.keys(gameMaps).length) {
+                    messageText = `Level ${currentLevel} Complete!\nPress 'Next Level' to continue.`;
+                    nextLevelButton.classList.remove('hidden');
+                    restartButton.classList.add('hidden'); // Hide restart if next level is available
+                } else {
+                    messageText = "You rescued her!\nAll levels complete!";
+                    nextLevelButton.classList.add('hidden'); // No more levels
+                    restartButton.classList.remove('hidden'); // Only restart is an option
+                }
             }
         }
 
@@ -1052,8 +1198,7 @@
 
             // Draw enemies
             enemies.forEach(enemy => {
-                ctx.fillStyle = enemy.color;
-                ctx.fillRect(enemy.x - cameraX, enemy.y - cameraY, enemy.width, enemy.height); // Apply cameraY
+                drawCharacter(enemy, cameraX); // Pass enemy object directly
             });
 
             // Draw collectibles
@@ -1085,18 +1230,26 @@
             }
         }
 
-        // Reset game state for restart
+        // Reset game state for restart or next level
         function resetGame() {
+            // Cancel any existing game loop to prevent speed increase
+            if (gameLoopId) {
+                cancelAnimationFrame(gameLoopId);
+                gameLoopId = null;
+            }
+
             gameEnded = false;
             gameOver = false;
-            score = 0;
+            score = 0; // Reset score for new level
             scoreDisplay.textContent = `Score: ${score}`;
+            levelDisplay.textContent = `Level: ${currentLevel}`; // Update level display
             messageText = "Use Arrow Keys (Left/Right/Up)\nor Touch Controls to move and jump!"; // Reset initial message
             messageTimer = 180; // Reset timer for initial message
             initialMessageActive = true; // Set initial message back to active
             restartButton.classList.add('hidden');
+            nextLevelButton.classList.add('hidden');
 
-            // Re-initialize map and entities for a fresh start
+            // Re-initialize map and entities for a fresh start for the new level
             initializeEntities();
             resizeGame(); // Re-position man and woman, redraw
             man.dx = 0; man.dy = 0; // Reset velocities
@@ -1104,15 +1257,17 @@
             man.isHit = false; // Reset hit state
             man.hitTimer = 0; // Reset hit timer
             confettiParticles = []; // Clear confetti
+            gameFrameCounter = 0; // Reset frame counter for new level
 
-            // Ensure game loop is running if it stopped due to game over/win
-            requestAnimationFrame(gameLoop);
+            // Start a new game loop
+            gameLoop();
         }
 
 
         // Game loop
         function gameLoop() {
-            requestAnimationFrame(gameLoop); // Always loop to allow animations
+            gameLoopId = requestAnimationFrame(gameLoop); // Assign ID to gameLoopId
+            gameFrameCounter++; // Increment frame counter
             updateGame(); // Update game state
             drawGame();   // Redraw based on new state
         }
