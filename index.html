@@ -32,7 +32,7 @@
             box-shadow: 0 10px 15px rgba(0, 0, 0, 0.5);
             width: 100%; /* Take full available width of parent */
             max-width: 800px; /* Limit max width for larger screens */
-            box-sizing: border-box;
+            box-sizing: border;
             flex-grow: 1; /* Allows it to expand vertically */
             min-height: 0; /* Allow flex item to shrink below content size */
             overflow: auto; /* Allow scrolling inside the game container if content exceeds its height */
@@ -102,7 +102,7 @@
             transform: translateY(2px); /* Press effect */
         }
 
-        .restart-button, .next-level-button { /* Added .next-level-button */
+        .restart-button, .next-level-button, .play-again-button { /* Added .next-level-button, .play-again-button */
             background-color: #e53e3e; /* Red for restart */
             color: white;
             padding: 0.75rem 1.5rem;
@@ -120,22 +120,51 @@
             background-color: #28a745; /* Green for next level */
         }
 
-        .restart-button:active, .next-level-button:active {
+        .play-again-button { /* Style specifically for play again button */
+            background-color: #4CAF50; /* Green */
+        }
+
+        .restart-button:active, .next-level-button:active, .play-again-button:active {
             background-color: #c53030;
             transform: translateY(2px);
         }
 
-        /* Responsive adjustments for overall layout */
-        @media (min-width: 768px) {
-            .game-container {
-                padding: 2rem;
-            }
-            .game-info {
-                font-size: 1.25rem;
-            }
-            .control-button {
-                font-size: 1.5rem;
-            }
+        .level-selector {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            width: 100%;
+            max-width: 400px;
+            justify-content: center;
+        }
+
+        .level-button {
+            background-color: #4a5568; /* Gray for level buttons */
+            color: white;
+            padding: 0.75rem 1.25rem;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            flex: 1;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+            transition: background-color 0.2s ease;
+        }
+
+        .level-button:not(.disabled):hover {
+            background-color: #2d3748;
+        }
+
+        .level-button.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background-color: #718096;
+        }
+
+        .level-button.current-level {
+            background-color: #2b6cb0; /* Highlight current level */
+            border: 2px solid #63b3ed;
         }
     </style>
 </head>
@@ -143,8 +172,9 @@
     <div class="game-container">
         <h1 class="text-3xl sm:text-4xl font-bold text-white mb-4 text-center">Help Haroon rescue Saaniya!</h1>
         <div class="game-info">
-            <span id="scoreDisplay">Score: 0</span>
+            <span id="scoreDisplay">Score: 0/0</span>
             <span id="levelDisplay">Level: 1</span>
+            <span id="deathCounter">Deaths: 0</span>
         </div>
         <div id="message-box" class="message-box">Use Arrow Keys (Left/Right/Up) or Touch Controls to move and jump!</div>
         <canvas id="gameCanvas"></canvas>
@@ -153,8 +183,15 @@
             <button id="jumpButton" class="control-button">JUMP</button>
             <button id="rightButton" class="control-button">▶</button>
         </div>
-        <button id="restartButton" class="restart-button hidden">Restart Game</button>
-        <button id="nextLevelButton" class="next-level-button hidden">Next Level</button> <!-- New button for next level -->
+        <button id="restartButton" class="restart-button hidden">Restart Level</button>
+        <button id="nextLevelButton" class="next-level-button hidden">Next Level</button>
+        <button id="playAgainButton" class="play-again-button hidden">Play Again from Level 1</button>
+
+        <div class="level-selector" id="levelSelector">
+            <button id="level1Button" class="level-button current-level" data-level="1">Level 1</button>
+            <button id="level2Button" class="level-button disabled" data-level="2">Level 2</button>
+            <button id="level3Button" class="level-button disabled" data-level="3">Level 3</button>
+        </div>
     </div>
 
     <script type="module">
@@ -178,25 +215,25 @@
             initialX: 2 * gridSize,
             x: 0, y: 0, dx: 0, dy: 0,
             shape: [
-                [0, 8, 8, 0], // Row 0: Hair/Head top (darker skin for hair/turban)
-                [1, 9, 9, 1], // Row 1: Face with eye/mouth (skin, eye/mouth detail, skin)
-                [1, 1, 1, 1], // Row 2: Lower face/neck/beard stubble area
-                [3, 3, 3, 3], // Row 3: Upper Torso (Kameez)
-                [3, 4, 4, 3], // Row 4: Mid Torso (Kameez with arm details)
-                [5, 5, 5, 5], // Row 5: Upper Shalwar
-                [5, 5, 5, 5], // Row 6: Mid Shalwar
-                [6, 6, 6, 6]  // Row 7: Feet / Shoes - Default state
+                [0, 8, 8, 0], // Hair/Head top
+                [1, 9, 9, 1], // Face with eye/mouth
+                [1, 1, 1, 1], // Lower face/neck/beard stubble area
+                [3, 3, 3, 3], // Upper Torso (Kameez)
+                [3, 4, 4, 3], // Mid Torso (Kameez with arm details)
+                [5, 5, 5, 5], // Upper Shalwar
+                [5, 5, 5, 5], // Mid Shalwar
+                [6, 6, 6, 6]  // Feet / Shoes - Default state
             ],
-            // Alternate shape for walking animation (only feet change)
+            // Alternate shape for walking animation (only feet and subtle body/arm change)
             walkingShape: [
                 [0, 8, 8, 0],
                 [1, 9, 9, 1],
                 [1, 1, 1, 1],
-                [3, 3, 3, 3],
-                [3, 4, 4, 3],
+                [3, 3, 3, 3], // Arms slightly forward/back
+                [4, 3, 3, 4], // Torso subtly shifts
                 [5, 5, 5, 5],
                 [5, 5, 5, 5],
-                [7, 7, 7, 7]  // Row 7: Feet shifted (alternate state)
+                [7, 7, 7, 7]  // Feet shifted (alternate state)
             ],
             colorMap: {
                 0: 'transparent',
@@ -216,7 +253,8 @@
             animationFrame: 0,
             animationSpeed: 5,
             isHit: false,
-            hitTimer: 0
+            hitTimer: 0,
+            currentDirection: 'right'
         };
 
         // Woman (to be rescued) - 8 rows x 4 columns for detail within 1 tile width, 2 tiles height
@@ -225,14 +263,37 @@
             width: gridSize, // Character is 1 tile wide (32 pixels)
             height: 2 * gridSize, // Character is 2 tiles tall (64 pixels)
             shape: [
-                [0, 8, 8, 0], // Row 0: Hair/Head top (could be a head covering too)
-                [9, 1, 1, 9], // Row 1: Face with eyes/details (hair, skin, skin, hair)
-                [0, 1, 1, 0], // Row 2: Lower face/neck/jewelry area
-                [3, 3, 3, 3], // Row 3: Choli (top garment)
-                [4, 4, 4, 4], // Row 4: Upper Lengha (skirt)
-                [4, 5, 5, 4], // Row 5: Mid Lengha (with inner detail/fold to show volume)
-                [4, 4, 4, 4], // Row 6: Lower Lengha (flowing out)
-                [0, 6, 6, 0]  // Row 7: Heels (positioned slightly narrower at base)
+                [0, 8, 8, 0], // Hair/Head top
+                [9, 1, 1, 9], // Face with eyes/details
+                [0, 1, 1, 0], // Lower face/neck/jewelry area
+                [3, 3, 3, 3], // Choli (top garment)
+                [4, 4, 4, 4], // Upper Lengha
+                [4, 5, 5, 4], // Mid Lengha (with inner detail/fold to show volume)
+                [4, 4, 4, 4], // Lower Lengha (flowing out)
+                [0, 6, 6, 0]  // Heels
+            ],
+            // Saaniya Idle Animation shapes - Adjusted for less suggestive movement
+            idleShapes: [
+                [ // Frame 0
+                    [0, 8, 8, 0],
+                    [9, 1, 1, 9],
+                    [0, 1, 1, 0],
+                    [3, 3, 3, 3],
+                    [4, 4, 4, 4],
+                    [4, 5, 5, 4],
+                    [4, 4, 4, 4],
+                    [0, 6, 6, 0]
+                ],
+                [ // Frame 1 (subtle upper body shift)
+                    [0, 8, 8, 0],
+                    [9, 1, 1, 9],
+                    [0, 1, 1, 0],
+                    [4, 3, 3, 4], // Subtle arm/upper body shift
+                    [3, 4, 4, 3], // Subtle torso shift
+                    [4, 5, 5, 4],
+                    [4, 4, 4, 4],
+                    [0, 6, 6, 0]
+                ]
             ],
             colorMap: {
                 0: 'transparent',
@@ -244,7 +305,9 @@
                 6: '#34495e', // Heels (Dark Grey/Black)
                 8: '#8B4513', // Hair (Saddle Brown)
                 9: '#000000'  // Eyes (black) / Bindi (small black dot)
-            }
+            },
+            animationFrame: 0,
+            animationSpeed: 10 // Slower animation for idle
         };
 
         // Standard Enemy (Ground-based)
@@ -288,18 +351,58 @@
             height: gridSize
         };
 
+        // Key definition - More distinctly a key
+        const keyType = {
+            width: gridSize, // Full tile size
+            height: gridSize,
+            shape: [
+                [0, 0, 1, 1, 0, 0, 0, 0], // Top of the key head
+                [0, 1, 1, 1, 1, 0, 0, 0], // Upper key head
+                [1, 1, 1, 1, 1, 1, 0, 0], // Larger key head
+                [0, 0, 1, 1, 0, 0, 0, 0], // Neck of key
+                [0, 0, 1, 0, 0, 0, 0, 0], // Shaft
+                [0, 0, 1, 0, 0, 0, 0, 0], // Shaft
+                [0, 0, 1, 2, 2, 0, 0, 0], // Key teeth part 1 (extended)
+                [0, 0, 1, 2, 0, 0, 0, 0]  // Key teeth part 2
+            ],
+            colorMap: {
+                0: 'transparent',
+                1: '#FFD700', // Gold for key body
+                2: '#FFA500'  // Orange for key teeth
+            }
+        };
 
-        // Enemy definition
+        // Gate definition (new obstacle type)
+        const gateType = {
+            width: gridSize,
+            height: 2 * gridSize, // 2 tiles tall
+            shape: [
+                [1, 1, 1, 1],
+                [1, 2, 2, 1],
+                [1, 2, 2, 1],
+                [1, 1, 1, 1],
+                [1, 2, 2, 1],
+                [1, 2, 2, 1],
+                [1, 1, 1, 1]
+            ],
+            colorMap: {
+                1: '#5C4033', // Dark wood/metal frame
+                2: '#8B4513'  // Lighter wood/metal bars
+            }
+        };
+
+
+        // Enemy constructor function
         function createEnemy(x, y, speed, type = 'ground') {
-            const enemyBase = { x, y, dx: speed, dy: 0, width: gridSize, height: gridSize };
+            const enemyBase = { x, y, dx: speed, dy: 0, animationFrame: 0, animationSpeed: 8 };
             if (type === 'flying') {
-                return { ...enemyBase, ...flyingEnemyType, initialY: y, verticalAmplitude: 30, verticalSpeed: 0.05, type: 'flying' }; // Reduced amplitude for smoother move
+                return { ...enemyBase, ...flyingEnemyType, initialY: y, verticalAmplitude: 30, verticalSpeed: 0.05, type: 'flying' };
             }
             return { ...enemyBase, ...groundEnemyType, type: 'ground' };
         }
         let enemies = [];
 
-        // Collectible definition (coins)
+        // Collectible constructor function
         function createCollectible(x, y) {
             return {
                 x: x,
@@ -307,10 +410,19 @@
                 width: gridSize / 2, // Half tile size for coins
                 height: gridSize / 2,
                 color: '#f1c40f', // Gold
-                collected: false
+                collected: false,
+                points: 100 // Points per collectible
             };
         }
         let collectibles = [];
+        let totalCollectiblesCurrentLevel = 0; // Total points available in current level
+
+        // Key object
+        let levelKey = null; // Represents the key in the current level
+
+        // Gate object
+        let levelGate = null; // Represents the gate in the current level
+
 
         // Cloud definition
         function createCloud(x, y, width, height, speed) {
@@ -358,14 +470,61 @@
             2: [ // Level 2 - More challenging!
                 [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
                 [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'F', ' ', ' ', ' ', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // Flying enemy starts at col 23, moves left
                 [' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'E', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' '],
                 [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // Platform with enemy wider
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', 'O', 'O', ' ', ' ', 'F', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // Obstacle is now 5 blocks wide, 'F' flying enemy strategically placed
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', 'O', 'O', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // Obstacle is now 5 blocks wide, 'F' flying enemy removed from here
                 [' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', 'E', ' ', 'C', ' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' '], // New platform, new enemy
                 ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', ' ', 'G', 'G', 'G', 'O', 'O', 'O', 'O', 'O', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', 'G', 'G', 'G', 'G', 'G'], // Taller obstacle after pit, 'O' is 2 tiles tall
                 ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', ' ', 'G', 'G', 'G', 'O', 'O', 'O', 'O', 'O', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', 'G', 'G', 'G', 'G', 'G'],
                 ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G']
+            ],
+            3: [ // Level 3 - Redesigned from scratch (100x40 map)
+                Array(100).fill(' '), // 0
+                Array(100).fill(' '), // 1
+                Array(100).fill(' '), // 2
+                Array(100).fill(' '), // 3
+                Array(100).fill(' '), // 4
+                Array(100).fill(' '), // 5
+                Array(100).fill(' '), // 6
+                Array(100).fill(' '), // 7
+                Array(100).fill(' '), // 8
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'K', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 9 - KEY
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 10 - Platform for key
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'F', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 11 - Flying enemy
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 12 - Higher Platform for Key path
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 13 - Platform below flying enemy
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 14 - Platform near start of key path climb
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 15
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 16
+
+                // Main ground and initial platforms (Rows 17-29)
+                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G'], // 17 - Main starting ground (player spawns here)
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 18 - Padding for player height
+                [' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 19 - Collectible near start
+                [' ', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 20 - Platform after start
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', 'E', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 21 - Ground enemy
+                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G'], // 22 - Solid ground
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 23
+                // Pit section
+                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'G'], // 24 - Edge of pit
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 25
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 26 - Pit recovery platform
+                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G'], // 27 - Ground after pit
+
+                // Vertical climb to Key path and Princess area
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 28
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 29
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 30
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 31
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 32
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 33
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 34
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 35
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 36
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 37
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 38
+                Array(100).fill('G') // 39 - Bottommost ground, always solid
             ]
         };
         let currentLevel = 1;
@@ -379,13 +538,23 @@
         let gameEnded = false; // When woman is rescued
         let gameOver = false; // When man dies
         let score = 0;
-        let messageText = "Use Arrow Keys (Left/Right/Up)\nor Touch Controls to move and jump!"; // Text for overlay, now with newline
-        let messageTimer = 180; // Display initial message for 3 seconds (60 frames per second * 3)
-        let initialMessageActive = true; // New flag for initial message state
+        let deathCount = 0; // New: Death counter
+        let hasKey = false; // New: For Level 3
+        let unlockedLevels = 1; // New: Tracks unlocked levels
+
+        let messageText = ""; // Changed initial message to empty
+        let messageTimer = 0; // Changed initial timer to 0
+        let initialMessageActive = false; // Changed to false by default
+
+        // DOM elements
         let scoreDisplay = document.getElementById('scoreDisplay');
-        let levelDisplay = document.getElementById('levelDisplay'); // New element for level display
+        let levelDisplay = document.getElementById('levelDisplay');
+        let deathCounter = document.getElementById('deathCounter'); // New: Death counter display
         let restartButton = document.getElementById('restartButton');
-        let nextLevelButton = document.getElementById('nextLevelButton'); // Reference to the new button
+        let nextLevelButton = document.getElementById('nextLevelButton');
+        let playAgainButton = document.getElementById('playAgainButton'); // New button
+        let levelSelector = document.getElementById('levelSelector');
+        let levelButtons = {}; // To store references to level buttons
 
         // Keyboard input handling
         const keys = {
@@ -397,9 +566,9 @@
         document.addEventListener('keydown', (e) => {
             if (keys.hasOwnProperty(e.key)) {
                 keys[e.key] = true;
-                if (initialMessageActive) { // Dismiss initial message on first key press
+                if (initialMessageActive) { // Allow any input to dismiss initial message
                     initialMessageActive = false;
-                    messageTimer = 0; // Ensure it's immediately hidden
+                    messageTimer = 0;
                 }
                 e.preventDefault();
             }
@@ -415,22 +584,37 @@
         const leftButton = document.getElementById('leftButton');
         const rightButton = document.getElementById('rightButton');
         const jumpButton = document.getElementById('jumpButton');
-        restartButton.addEventListener('click', () => {
-            // No longer reset to level 1 on 'restart' button click.
-            // It will just restart the current level.
-            resetGame();
-        });
+        
+        restartButton.addEventListener('click', resetGame);
         nextLevelButton.addEventListener('click', () => {
             currentLevel++;
             resetGame();
         });
+        playAgainButton.addEventListener('click', () => {
+            currentLevel = 1; // Reset to level 1
+            deathCount = 0; // Reset deaths for a new game
+            unlockedLevels = 1; // Reset unlocked levels
+            resetGame();
+        });
+
+        // Initialize level selector buttons
+        for (let i = 1; i <= Object.keys(gameMaps).length; i++) {
+            const btn = document.getElementById(`level${i}Button`);
+            levelButtons[i] = btn;
+            btn.addEventListener('click', (e) => {
+                if (!btn.classList.contains('disabled')) {
+                    currentLevel = parseInt(e.target.dataset.level);
+                    resetGame();
+                }
+            });
+        }
 
         function handleButtonPress(key, isPressed) {
             if (keys.hasOwnProperty(key)) {
                 keys[key] = isPressed;
-                if (initialMessageActive) { // Dismiss initial message on first button press
+                if (initialMessageActive) { // Allow any input to dismiss initial message
                     initialMessageActive = false;
-                    messageTimer = 0; // Ensure it's immediately hidden
+                    messageTimer = 0;
                 }
             }
         }
@@ -480,70 +664,86 @@
             const headerHeight = document.querySelector('h1').offsetHeight;
             const gameInfoHeight = document.getElementById('scoreDisplay').parentElement.offsetHeight;
             const controlsHeight = document.querySelector('.controls').offsetHeight;
-            // Get actual restart button height, accounting for 'hidden' class
-            const restartButtonElement = document.getElementById('restartButton');
-            const restartButtonHeight = restartButtonElement.classList.contains('hidden') ? 0 : restartButtonElement.offsetHeight;
-            const nextLevelButtonElement = document.getElementById('nextLevelButton'); // Get next level button height
-            const nextLevelButtonHeight = nextLevelButtonElement.classList.contains('hidden') ? 0 : nextLevelButtonElement.offsetHeight;
+            const restartButtonHeight = restartButton.classList.contains('hidden') ? 0 : restartButton.offsetHeight;
+            const nextLevelButtonHeight = nextLevelButton.classList.contains('hidden') ? 0 : nextLevelButton.offsetHeight;
+            const playAgainButtonHeight = playAgainButton.classList.contains('hidden') ? 0 : playAgainButton.offsetHeight;
+            const levelSelectorHeight = levelSelector.offsetHeight; // Get the height of the level selector div
 
+            let uiElementsTotalHeight = headerHeight + gameInfoHeight + controlsHeight + restartButtonHeight + nextLevelButtonHeight + playAgainButtonHeight + levelSelectorHeight + containerPaddingY;
 
-            // Calculate available width and height for canvas within the container,
-            // subtracting static UI elements and container's own padding/margins.
-            // We assume body itself has no significant padding/margin affecting this.
-            let availableWidth = gameContainer.clientWidth - containerPaddingX;
-            // Subtract UI elements from container's clientHeight, not viewport.
-            // Use clientHeight of gameContainer as available space, not window.innerHeight.
-            let uiElementsTotalHeight = headerHeight + gameInfoHeight + controlsHeight + restartButtonHeight + nextLevelButtonHeight + containerPaddingY;
-
-            // Add a small buffer to prevent elements from touching edges too much
             uiElementsTotalHeight += 20; // Extra buffer for vertical space
 
+            let availableWidth = gameContainer.clientWidth - containerPaddingX;
             let availableHeight = window.innerHeight - uiElementsTotalHeight;
 
-            // Determine optimal canvas dimensions maintaining 16:9 aspect ratio
             let targetWidth = availableWidth;
             let targetHeight = (targetWidth / 16) * 9;
 
-            // If the calculated height is too large for the available vertical space,
-            // constrain by height and re-calculate width.
             if (targetHeight > availableHeight) {
                 targetHeight = availableHeight;
                 targetWidth = (targetHeight / 9) * 16;
             }
 
-            // Ensure dimensions are multiples of gridSize for pixel perfect rendering.
-            // Also ensure a minimum size to prevent the canvas from becoming too small to see anything.
-            const minCanvasWidth = gridSize * 15; // e.g., 15 tiles wide minimum
-            const minCanvasHeight = gridSize * 9;  // e.g., 9 tiles tall minimum (for ground, character, some sky)
+            const minCanvasWidth = gridSize * 15;
+            const minCanvasHeight = gridSize * 9;
 
             canvas.width = Math.max(minCanvasWidth, Math.floor(targetWidth / gridSize) * gridSize);
             canvas.height = Math.max(minCanvasHeight, Math.floor(targetHeight / gridSize) * gridSize);
 
-            // Set CSS width/height to fill its container while maintaining aspect ratio,
-            // but ensure the internal resolution (canvas.width/height) remains correct for pixel art.
-            // The `image-rendering: pixelated;` CSS property is essential here.
-            canvas.style.width = '100%'; // Allow CSS to scale it visually
-            canvas.style.height = 'auto'; // Maintain aspect ratio via CSS
+            canvas.style.width = '100%';
+            canvas.style.height = 'auto';
 
-            // Calculate fixed cameraY offset: ensures bottom of game world aligns with canvas bottom.
-            // If the map's total height is less than the canvas's current height, cameraY will be negative,
-            // so we clamp it at 0 to keep the top of the map visible.
+            // Camera Y will be fixed to the bottom of the map, only scrolls when map is taller than canvas
             cameraY = totalMapPixelHeight - canvas.height;
-            if (cameraY < 0) cameraY = 0; // Don't scroll above map top if map is shorter than canvas
+            if (cameraY < 0) cameraY = 0; // If map is shorter than canvas, cameraY is 0 (top of map visible)
 
 
             // Initial player and woman placement (absolute world coordinates)
+            // Default for Level 1 & 2
             man.x = man.initialX;
-            // Man's Y is placed on the second to last ground row of the map.
-            // Ensure this is consistent with the map data.
-            man.y = totalMapPixelHeight - (mapHeightTiles - 7) * gridSize - man.height;
-
+            man.y = (7 * gridSize) - man.height; // Placed on main ground (row 7)
 
             woman.x = (mapWidthTiles - 5) * gridSize; // 5 tiles from the right edge
-            // Woman's Y is also placed on the second to last ground row.
-            woman.y = totalMapPixelHeight - (mapHeightTiles - 7) * gridSize - woman.height;
+            woman.y = (7 * gridSize) - woman.height; // On same main ground as man
+
+            // Specific adjustments for Level 3
+            if (currentLevel === 3) {
+                // Man starts at (col 2, row 17) in the new Level 3 map
+                man.x = 2 * gridSize;
+                man.y = (17 * gridSize) - man.height; // Positioned on ground at row 17
+
+                // Woman at (col 91, row 26) in new Level 3 map, behind the gate
+                woman.x = 91 * gridSize;
+                woman.y = (26 * gridSize) - woman.height; // Positioned on ground at row 26
+
+                if (levelGate) {
+                    // Gate is at (col 90, row 26) in the new Level 3 map (it's 2 tiles tall, so it occupies 26 and 27)
+                    levelGate.x = 90 * gridSize;
+                    levelGate.y = 26 * gridSize; // Top of the gate (row 26)
+                }
+            }
+
 
             drawGame(); // Initial draw after resize and placement
+        }
+
+        // Function to update level selector button states
+        function updateLevelSelector() {
+            for (let i = 1; i <= Object.keys(gameMaps).length; i++) {
+                const btn = levelButtons[i];
+                if (btn) {
+                    if (i <= unlockedLevels) {
+                        btn.classList.remove('disabled');
+                    } else {
+                        btn.classList.add('disabled');
+                    }
+                    if (i === currentLevel) {
+                        btn.classList.add('current-level');
+                    } else {
+                        btn.classList.remove('current-level');
+                    }
+                }
+            }
         }
 
         // Initialize entities (enemies, collectibles, clouds) based on the map
@@ -552,6 +752,9 @@
             collectibles = [];
             clouds = []; // Reset clouds for new game
             confettiParticles = []; // Clear any lingering confetti
+            hasKey = false; // Reset key state for each level
+            levelKey = null; // Ensure key is nullified if not present
+            levelGate = null; // Ensure gate is nullified if not present
 
             // Add some initial clouds (absolute map coordinates, will be drawn with parallax)
             clouds.push(createCloud(100, 50, 100, 40, 0.5));
@@ -572,6 +775,8 @@
                 gameMap[i] = [...currentMapData[i]];
             }
 
+            totalCollectiblesCurrentLevel = 0; // Reset for new level
+
             for (let row = 0; row < mapHeightTiles; row++) {
                 for (let col = 0; col < mapWidthTiles; col++) {
                     const tileType = gameMap[row][col];
@@ -579,17 +784,38 @@
                     const py = row * gridSize;
 
                     if (tileType === 'E') {
-                        // Place ground enemy
                         enemies.push(createEnemy(px, py + gridSize - (groundEnemyType.height), 2, 'ground'));
-                        gameMap[row][col] = ' '; // Clear spawn point from map so it doesn't draw a tile
-                    } else if (tileType === 'F') {
-                         // Place flying enemy, slightly above the tile
-                        enemies.push(createEnemy(px, py - (flyingEnemyType.height / 2), 1.5, 'flying'));
                         gameMap[row][col] = ' '; // Clear spawn point
-                    }
-                    else if (tileType === 'C') {
+                    } else if (tileType === 'F') {
+                        // Flying enemy position needs to be adjusted based on its height
+                        enemies.push(createEnemy(px, py + gridSize / 2, -1.5, 'flying')); // Initial dx is -1.5 (left)
+                        gameMap[row][col] = ' '; // Clear spawn point
+                    } else if (tileType === 'C') {
                         collectibles.push(createCollectible(px + gridSize / 4, py + gridSize / 4)); // Center coin in tile
-                        gameMap[row][col] = ' '; // Clear collectible from map
+                        totalCollectiblesCurrentLevel += 100; // Add to total
+                        gameMap[row][col] = ' '; // Clear collectible
+                    } else if (tileType === 'K') { // Initialize Key
+                        levelKey = {
+                            x: px + (gridSize - keyType.width) / 2, // Center key horizontally within a grid
+                            y: py + (gridSize - keyType.height) / 2, // Center key vertically within a grid
+                            width: keyType.width,
+                            height: keyType.height,
+                            shape: keyType.shape,
+                            colorMap: keyType.colorMap,
+                            collected: false
+                        };
+                        gameMap[row][col] = ' '; // Clear key spawn
+                    } else if (tileType === 'X') { // Initialize Gate
+                        levelGate = {
+                            x: px,
+                            y: py,
+                            width: gateType.width,
+                            height: gateType.height,
+                            shape: gateType.shape,
+                            colorMap: gateType.colorMap,
+                            isOpen: false
+                        };
+                        // The 'X' remains on the map as a blocking tile until opened
                     }
                 }
             }
@@ -606,13 +832,17 @@
             return ' '; // Treat out-of-bounds as empty space
         }
 
-        // Draw a pixel art character (man/woman/enemy)
-        function drawCharacter(character, cameraX, isWalking = false) {
+        // Draw a pixel art character (man/woman/enemy/key/gate)
+        function drawCharacter(character, cameraX, isWalking = false, isIdle = false) {
             const drawX = character.x - cameraX;
-            const drawY = character.y - cameraY; // Apply global cameraY offset
+            const drawY = character.y - cameraY;
 
-            // Determine the size of the individual 'pixels' within the character's shape
-            // Assumes character.shape[0].length is consistent for all rows
+            // Ensure character.shape is an array and has at least one row
+            if (!character.shape || character.shape.length === 0 || character.shape[0].length === 0) {
+                console.warn("Character shape is invalid:", character);
+                return;
+            }
+
             const charPixelDrawSizeX = character.width / character.shape[0].length;
             const charPixelDrawSizeY = character.height / character.shape.length;
 
@@ -620,8 +850,16 @@
 
             // Apply walking animation for man
             if (isWalking && character === man) {
-                const step = Math.floor(character.animationFrame / character.animationSpeed) % 2; // 0 or 1
-                currentShape = (step === 0) ? man.shape : man.walkingShape;
+                const step = Math.floor(character.animationFrame / character.animationSpeed) % man.walkingShape.length;
+                currentShape = man.walkingShape; // For man, walkingShape is the animation frame
+            } else if (character === man) {
+                currentShape = man.shape; // Default standing shape
+            }
+
+            // Apply idle animation for woman
+            if (isIdle && character === woman) {
+                const step = Math.floor(gameFrameCounter / character.animationSpeed) % character.idleShapes.length;
+                currentShape = character.idleShapes[step];
             }
 
             // Apply hit animation (flashing) for the man
@@ -629,7 +867,6 @@
                 return; // Skip drawing to create a flashing effect
             }
 
-            // Draw each pixel of the character's shape
             currentShape.forEach((row, rowIndex) => {
                 row.forEach((pixelType, colIndex) => {
                     const color = character.colorMap[pixelType];
@@ -695,6 +932,8 @@
                         ctx.fillRect(drawX, drawY, gridSize, gridSize / 2); // Thinner platform
                         ctx.fillStyle = '#1e8449'; // Darker green underside
                         ctx.fillRect(drawX, drawY + gridSize / 2, gridSize, gridSize / 2);
+                    } else if (tileType === 'X' && levelGate && !levelGate.isOpen) { // Draw gate if it's there and not open
+                        drawCharacter(levelGate, cameraX);
                     }
                 }
             }
@@ -702,72 +941,76 @@
 
         // Draw the castle background elements
         function drawBackground(cameraX, cameraY) {
-            // Sky is handled by canvas background-color CSS (light blue)
-            ctx.fillStyle = '#7da5d9'; // Sky blue
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
             const castleColor = '#a9a9a9';
             const windowColor = '#fdfd96';
             const turretColor = '#808080';
             const battlementColor = '#696969';
             const flagColor = '#e74c3c';
-            const deepGroundColor = '#212121'; // Dark, earthy color for deep ground/void
+            const deepGroundColor = '#3a3a3a'; // Slightly lighter dark ground
+
+            // 1. Fill entire canvas with deep ground color (as a base layer)
+            ctx.fillStyle = deepGroundColor;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             // Calculate the absolute Y coordinate of the main ground level in the world
-            // (assuming row 7 is where the main ground starts in the map data)
-            const mapGroundAbsoluteY = totalMapPixelHeight - (mapHeightTiles - 7) * gridSize;
+            // (assuming row 7 is where the main ground starts in the map data, adjust for Level 3 if needed)
+            let groundRefRow = 7; // Default for level 1 & 2
+            if (currentLevel === 3) {
+                groundRefRow = 26; // Main ground for Level 3 (where player starts, and gate is)
+            }
+            const mapGroundAbsoluteY = groundRefRow * gridSize;
 
-            // Draw the deep ground/void layer, extending downwards from the visible ground level
-            // This fills any area below the playable map's ground that the camera might show
-            ctx.fillStyle = deepGroundColor;
-            ctx.fillRect(0, mapGroundAbsoluteY - cameraY, canvas.width, canvas.height - (mapGroundAbsoluteY - cameraY));
+
+            // 2. Draw Sky (will overlay part of the deep ground)
+            ctx.fillStyle = '#7da5d9'; // Sky blue
+            // Sky should extend down to the 'ground' level in the background
+            const castleTopRelativeToGround = 3 * gridSize; // How many grid units the castle wall extends UP from the map ground
+            const skyEndDrawY = mapGroundAbsoluteY - castleTopRelativeToGround - (cameraY * 0.5); // Apply parallax
+            ctx.fillRect(0, 0, canvas.width, Math.max(0, skyEndDrawY));
+
 
             // Parallax offset for background elements
             const parallaxOffsetX = cameraX * 0.5;
-            const parallaxOffsetY = cameraY * 0.5; // Apply parallax to Y as well
+            const parallaxOffsetY = cameraY * 0.5;
 
             const backgroundRepeatWidth = gridSize * 15;
 
             const startDrawX = - (parallaxOffsetX % backgroundRepeatWidth);
             const numRepeats = Math.ceil((canvas.width + backgroundRepeatWidth) / backgroundRepeatWidth) + 1;
 
-            // Define castle base drawing Y relative to mapGroundAbsoluteY
-            const castleTopRelativeToGround = 3 * gridSize; // How many grid units the castle wall extends UP from the map ground
-            const castleWallDrawY = mapGroundAbsoluteY - castleTopRelativeToGround - parallaxOffsetY;
-
             // Define how much the castle extends *below* the visible map ground
-            const castleFoundationDepth = 5 * gridSize; // Extend 5 grid units below ground
-            
+            const castleFoundationDepth = 15 * gridSize; // Increased foundation depth to cover entire map height
+
             for (let i = 0; i < numRepeats + 1; i++) {
                 const currentSectionX = startDrawX + i * backgroundRepeatWidth;
 
+                // Define castle base drawing Y relative to mapGroundAbsoluteY
+                const castleWallDrawY = mapGroundAbsoluteY - castleTopRelativeToGround - parallaxOffsetY;
+
                 // --- Base Wall (extended downwards) ---
-                const wallTotalHeight = castleTopRelativeToGround + castleFoundationDepth;
                 ctx.fillStyle = castleColor;
-                ctx.fillRect(currentSectionX, castleWallDrawY, gridSize * 15, wallTotalHeight);
+                ctx.fillRect(currentSectionX, castleWallDrawY, gridSize * 15, castleTopRelativeToGround + castleFoundationDepth);
 
                 // --- Main Towers (Taller) ---
                 const mainTurretHeight = 4 * gridSize;
-                const mainTurretDrawY = castleWallDrawY - mainTurretHeight; // Relative to the top of the wall
+                const mainTurretDrawY = castleWallDrawY - mainTurretHeight;
                 ctx.fillStyle = turretColor;
-                ctx.fillRect(currentSectionX + 1 * gridSize, mainTurretDrawY, 2 * gridSize, mainTurretHeight); // Left tall turret
-                ctx.fillRect(currentSectionX + 12 * gridSize, mainTurretDrawY, 2 * gridSize, mainTurretHeight); // Right tall turret
+                ctx.fillRect(currentSectionX + 1 * gridSize, mainTurretDrawY, 2 * gridSize, mainTurretHeight);
+                ctx.fillRect(currentSectionX + 12 * gridSize, mainTurretDrawY, 2 * gridSize, mainTurretHeight);
 
                 // --- Smaller Tower ---
                 const shortTurretHeight = 2 * gridSize;
-                const shortTurretDrawY = castleWallDrawY - shortTurretHeight; // Relative to the top of the wall
+                const shortTurretDrawY = castleWallDrawY - shortTurretHeight;
                 ctx.fillStyle = turretColor;
-                ctx.fillRect(currentSectionX + 6 * gridSize, shortTurretDrawY, 2 * gridSize, shortTurretHeight); // Mid short turret
+                ctx.fillRect(currentSectionX + 6 * gridSize, shortTurretDrawY, 2 * gridSize, shortTurretHeight);
 
                 // --- Battlement details ---
                 ctx.fillStyle = battlementColor;
-                // Top of walls
                 for (let j = 0; j < 15; j++) {
                     if (j % 2 === 0) {
                         ctx.fillRect(currentSectionX + j * gridSize, castleWallDrawY, gridSize, gridSize / 2);
                     }
                 }
-                // Tower battlements (adjust relative to their turret base)
                 ctx.fillRect(currentSectionX + 1 * gridSize, mainTurretDrawY - (gridSize / 2), gridSize / 2, gridSize / 2);
                 ctx.fillRect(currentSectionX + 1 * gridSize + gridSize, mainTurretDrawY - (gridSize / 2), gridSize / 2, gridSize / 2);
                 ctx.fillRect(currentSectionX + 12 * gridSize, mainTurretDrawY - (gridSize / 2), gridSize / 2, gridSize / 2);
@@ -775,30 +1018,24 @@
 
                 // --- Windows ---
                 ctx.fillStyle = windowColor;
-                ctx.fillRect(currentSectionX + 3 * gridSize, castleWallDrawY + (0.5 * gridSize), gridSize, gridSize); // Main wall window 1
-                ctx.fillRect(currentSectionX + 9 * gridSize, castleWallDrawY + (0.5 * gridSize), gridSize, gridSize); // Main wall window 2
-
-                ctx.fillRect(currentSectionX + 1.5 * gridSize, mainTurretDrawY + gridSize, gridSize, gridSize / 2); // Left turret window
-                ctx.fillRect(currentSectionX + 12.5 * gridSize, mainTurretDrawY + gridSize, gridSize, gridSize / 2); // Right turret window
-
-                // Arched window (simple representation)
+                ctx.fillRect(currentSectionX + 3 * gridSize, castleWallDrawY + (0.5 * gridSize), gridSize, gridSize);
+                ctx.fillRect(currentSectionX + 9 * gridSize, castleWallDrawY + (0.5 * gridSize), gridSize, gridSize);
+                ctx.fillRect(currentSectionX + 1.5 * gridSize, mainTurretDrawY + gridSize, gridSize, gridSize / 2);
+                ctx.fillRect(currentSectionX + 12.5 * gridSize, mainTurretDrawY + gridSize, gridSize, gridSize / 2);
                 ctx.fillStyle = windowColor;
                 ctx.fillRect(currentSectionX + 6.5 * gridSize, shortTurretDrawY + gridSize / 2, gridSize, gridSize / 2);
-                ctx.fillRect(currentSectionX + 6.5 * gridSize + gridSize / 4, shortTurretDrawY + gridSize, gridSize / 2, gridSize / 2); // Arch top
-
+                ctx.fillRect(currentSectionX + 6.5 * gridSize + gridSize / 4, shortTurretDrawY + gridSize, gridSize / 2, gridSize / 2);
 
                 // --- Flag ---
-                // Flagpole top: mainTurretDrawY - gridSize - 10px
                 ctx.fillStyle = flagColor;
-                ctx.fillRect(currentSectionX + 1.5 * gridSize + gridSize / 2 - 2, mainTurretDrawY - gridSize - 10, 4, gridSize + 10); // Flagpole
-                ctx.fillRect(currentSectionX + 1.5 * gridSize + gridSize / 2 - 2, mainTurretDrawY - gridSize - 10, gridSize, gridSize / 2); // Flag fabric
+                ctx.fillRect(currentSectionX + 1.5 * gridSize + gridSize / 2 - 2, mainTurretDrawY - gridSize - 10, 4, gridSize + 10);
+                ctx.fillRect(currentSectionX + 1.5 * gridSize + gridSize / 2 - 2, mainTurretDrawY - gridSize - 10, gridSize, gridSize / 2);
             }
 
             // Draw clouds
             clouds.forEach(cloud => {
                 ctx.fillStyle = cloud.color;
                 ctx.beginPath();
-                // Apply parallax to clouds' Y position as well
                 ctx.arc(cloud.x - parallaxOffsetX + cloud.width * 0.2, cloud.y - parallaxOffsetY + cloud.height * 0.5, cloud.height * 0.5, 0, Math.PI * 2);
                 ctx.arc(cloud.x - parallaxOffsetX + cloud.width * 0.5, cloud.y - parallaxOffsetY + cloud.height * 0.3, cloud.height * 0.7, 0, Math.PI * 2);
                 ctx.arc(cloud.x - parallaxOffsetX + cloud.width * 0.8, cloud.y - parallaxOffsetY + cloud.height * 0.5, cloud.height * 0.6, 0, Math.PI * 2);
@@ -833,7 +1070,6 @@
 
         // Function to draw overlay text on the canvas, now supports multiple lines
         function drawOverlayMessage(message) {
-            // Dynamically adjust font size based on canvas width, clamped
             const maxFontSize = 48;
             const minFontSize = 24;
             let fontSize = Math.min(maxFontSize, Math.max(minFontSize, canvas.width * 0.06));
@@ -843,17 +1079,16 @@
             ctx.strokeStyle = '#000000';
             ctx.lineWidth = 4;
 
-            // Handle explicit newlines first, then wrap remaining lines
             const segmentsByExplicitNewline = message.split('\n');
             let finalLines = [];
-            const maxWidth = canvas.width * 0.8; // 80% of canvas width
+            const maxWidth = canvas.width * 0.8;
 
             segmentsByExplicitNewline.forEach(segment => {
                 const wrappedLinesInSegment = getWrappedTextLines(ctx, segment, maxWidth);
                 finalLines = finalLines.concat(wrappedLinesInSegment);
             });
             
-            const lineHeight = fontSize + 12; // Adjusted line height for spacing
+            const lineHeight = fontSize + 12;
             const totalTextHeight = finalLines.length * lineHeight;
             const startY = (canvas.height / 2) - (totalTextHeight / 2) + (lineHeight / 2);
 
@@ -868,12 +1103,11 @@
 
         // Function to spawn confetti particles
         function spawnConfetti() {
-            confettiParticles = []; // Clear existing confetti
-            // Spawn confetti at the center of the woman's current visible position
+            confettiParticles = [];
             const spawnX = woman.x + woman.width / 2;
             const spawnY = woman.y + woman.height / 2;
 
-            for (let i = 0; i < 100; i++) { // Spawn 100 particles
+            for (let i = 0; i < 100; i++) {
                 confettiParticles.push(createConfettiParticle(spawnX, spawnY));
             }
         }
@@ -881,20 +1115,17 @@
 
         // Update game logic (physics, movement, collisions)
         function updateGame() {
-            // Decrement message timer if active
+            // Manage initial message display
             if (initialMessageActive && messageTimer > 0) {
                 messageTimer--;
-                if (messageTimer <= 0) {
-                    initialMessageActive = false;
-                }
+                // Message will disappear when timer runs out or any key/button is pressed
+            } else if (messageTimer <= 0 && initialMessageActive) {
+                initialMessageActive = false; // Turn off initial message after timer
             }
 
-            // Only update game physics and character/enemy movement if game is active
             if (!gameEnded && !gameOver) {
-                // --- Apply Gravity to Man ---
                 man.dy += GRAVITY;
 
-                // --- Horizontal Movement for Man ---
                 let movedHorizontally = false;
                 man.dx = 0;
                 if (keys.ArrowLeft || keys.a) {
@@ -906,14 +1137,13 @@
                     movedHorizontally = true;
                 }
 
-                let nextManRectX = { // Rectangle for potential X movement
+                let nextManRectX = {
                     x: man.x + man.dx,
                     y: man.y,
                     width: man.width,
                     height: man.height
                 };
 
-                // Horizontal collision with map boundaries and tiles
                 const x1 = Math.floor(nextManRectX.x / gridSize);
                 const x2 = Math.ceil((nextManRectX.x + nextManRectX.width) / gridSize);
                 const y1 = Math.floor(nextManRectX.y / gridSize);
@@ -922,44 +1152,43 @@
                 for (let row = y1; row < y2; row++) {
                     for (let col = x1; col < x2; col++) {
                         const tileType = getTileAtPixel(col * gridSize, row * gridSize);
-                        if (['G', 'O', 'P'].includes(tileType)) {
+                        if (['G', 'O', 'P'].includes(tileType) || (tileType === 'X' && levelGate && !levelGate.isOpen)) { // Man can't pass closed gate
                             const tileRect = getTileBoundingBox(col, row);
                             if (intersectRect(nextManRectX, tileRect)) {
-                                if (man.dx > 0) { // Moving right, hit left side of tile
+                                if (man.dx > 0) {
                                     man.x = tileRect.x - man.width;
-                                } else if (man.dx < 0) { // Moving left, hit right side of tile
+                                } else if (man.dx < 0) {
                                     man.x = tileRect.x + tileRect.width;
                                 }
-                                man.dx = 0; // Stop horizontal movement
-                                break; // Collision resolved, stop checking this row horizontally
+                                man.dx = 0;
+                                break;
                             }
                         }
                     }
                 }
-                if (man.dx !== 0) { // Only apply if no collision or resolved without stopping
+                if (man.dx !== 0) {
                     man.x += man.dx;
                 }
 
+                // Update man's direction for drawing
+                if (man.dx < 0) man.currentDirection = 'left';
+                else if (man.dx > 0) man.currentDirection = 'right';
 
-                // Update animation frame if moving
                 if (movedHorizontally && man.onGround) {
                     man.animationFrame++;
                 } else {
-                    man.animationFrame = 0; // Reset animation when not walking
+                    man.animationFrame = 0;
                 }
 
-
-                // --- Vertical Movement for Man ---
-                let nextManRectY = { // Rectangle for potential Y movement
-                    x: man.x, // Use resolved X position
+                let nextManRectY = {
+                    x: man.x,
                     y: man.y + man.dy,
                     width: man.width,
                     height: man.height
                 };
 
-                man.onGround = false; // Assume not on ground until proven otherwise
+                man.onGround = false;
 
-                // Vertical collision with map boundaries and tiles
                 const vy1 = Math.floor(nextManRectY.y / gridSize);
                 const vy2 = Math.ceil((nextManRectY.y + nextManRectY.height) / gridSize);
                 const vx1 = Math.floor(nextManRectY.x / gridSize);
@@ -968,49 +1197,46 @@
                 for (let row = vy1; row < vy2; row++) {
                     for (let col = vx1; col < vx2; col++) {
                         const tileType = getTileAtPixel(col * gridSize, row * gridSize);
-                        if (['G', 'O', 'P'].includes(tileType)) {
+                        if (['G', 'O', 'P'].includes(tileType) || (tileType === 'X' && levelGate && !levelGate.isOpen)) { // Man can't pass closed gate
                             const tileRect = getTileBoundingBox(col, row);
                             if (intersectRect(nextManRectY, tileRect)) {
-                                if (man.dy > 0) { // Falling, hit top side of tile
+                                if (man.dy > 0) {
                                     man.y = tileRect.y - man.height;
-                                    man.onGround = true; // Landed on ground
-                                } else if (man.dy < 0) { // Jumping/moving up, hit bottom side of tile
+                                    man.onGround = true;
+                                } else if (man.dy < 0) {
                                     man.y = tileRect.y + tileRect.height;
                                 }
-                                man.dy = 0; // Stop vertical movement
-                                break; // Collision resolved, stop checking this row vertically
+                                man.dy = 0;
+                                break;
                             }
                         }
                     }
                 }
-                if (man.dy !== 0) { // Only apply if no collision or resolved without stopping
+                if (man.dy !== 0) {
                     man.y += man.dy;
                 }
 
-
-                // Boundary check for falling off the bottom of the map
-                if (man.y > totalMapPixelHeight + (2 * gridSize)) { // Allow falling 2 grid units below map's defined bottom
+                if (man.y > totalMapPixelHeight + (2 * gridSize)) {
                     gameOver = true;
-                    messageText = "Game Over!\nYou fell into the void!"; // Updated for multiline
+                    deathCount++; // Increment death count
+                    deathCounter.textContent = `Deaths: ${deathCount}`;
+                    messageText = "Game Over!\nYou fell into the void!";
                     restartButton.classList.remove('hidden');
-                    nextLevelButton.classList.add('hidden'); // Hide next level button on game over
-                    return; // Exit updateGame for this frame as game is over
+                    nextLevelButton.classList.add('hidden');
+                    playAgainButton.classList.add('hidden'); // Hide Play Again
+                    return;
                 }
 
-                // Jump input
                 if ((keys.ArrowUp || keys.w) && man.onGround) {
                     man.dy = JUMP_STRENGTH;
                     man.onGround = false;
                 }
 
-                // Update Enemies (only if game is active)
                 enemies.forEach(enemy => {
                     if (enemy.type === 'ground') {
-                        // Apply gravity to enemy
                         enemy.dy += GRAVITY;
                         enemy.y += enemy.dy;
 
-                        // Vertical collision for enemy (landing)
                         let nextEnemyY = enemy.y + enemy.dy;
                         const enemyBottomTileRow = Math.floor((nextEnemyY + enemy.height) / gridSize);
                         const enemyLeftCol = Math.floor(enemy.x / gridSize);
@@ -1022,7 +1248,7 @@
                             if (['G', 'O', 'P'].includes(tileType)) {
                                 const tileRect = getTileBoundingBox(col, enemyBottomTileRow);
                                 if (intersectRect({ x: enemy.x, y: nextEnemyY, width: enemy.width, height: enemy.height }, tileRect)) {
-                                    enemy.y = tileRect.y - enemy.height; // Snap to top of tile
+                                    enemy.y = tileRect.y - enemy.height;
                                     enemy.dy = 0;
                                     enemyOnGround = true;
                                     break;
@@ -1030,81 +1256,69 @@
                             }
                         }
 
-                        enemy.x += enemy.dx; // Apply horizontal movement
+                        enemy.x += enemy.dx;
 
-                        // Enemy turning logic (wall and ledge detection and princess boundary)
                         let turnAround = false;
-
-                        // Check for walls at current position after horizontal move
                         let checkX_wall_current = enemy.dx > 0 ? enemy.x + enemy.width : enemy.x;
                         let wallTile_current = getTileAtPixel(checkX_wall_current, enemy.y + enemy.height / 2);
                         if (['G', 'O', 'P'].includes(wallTile_current)) {
                             turnAround = true;
                         }
 
-                        // Check for ledges (ahead of current position, below feet)
-                        let checkX_ledge = enemy.dx > 0 ? enemy.x + enemy.width + 1 : enemy.x - 1; // 1 pixel outside current bounds
-                        let checkY_ledge = enemy.y + enemy.height + 1; // 1 pixel below enemy's feet
+                        let checkX_ledge = enemy.dx > 0 ? enemy.x + enemy.width + 1 : enemy.x - 1;
+                        let checkY_ledge = enemy.y + enemy.height + 1;
                         let ledgeTile = getTileAtPixel(checkX_ledge, checkY_ledge);
 
                         if (enemyOnGround && !['G', 'O', 'P'].includes(ledgeTile)) {
                             turnAround = true;
                         }
 
-                        // Check for map boundaries
                         if (enemy.x < 0 || enemy.x + enemy.width > totalMapPixelWidth) {
                             turnAround = true;
                         }
 
-                        // NEW: Enemy does not go past the woman's initial spawn X (left side)
-                        // For Level 1 ground enemy, it should patrol the platform and not go past woman.x
+                        // Level 1 specific enemy patrol (turn when reaching Saaniya's initial X)
                         if (currentLevel === 1) {
-                            const patrolLeftBound = 24 * gridSize; // Column 24 (where enemy spawns)
-                            const patrolRightBound = woman.x; // Woman's initial X is the right boundary
+                            // Enemy spawns around col 24, woman at col 35. Enemy should patrol right from spawn, then turn back.
+                            const patrolLeftBound = 24 * gridSize; // Enemy spawn X
+                            const patrolRightBound = woman.x; // Woman's X coordinate
 
                             if (enemy.dx > 0 && enemy.x + enemy.width >= patrolRightBound) {
                                 turnAround = true;
                             } else if (enemy.dx < 0 && enemy.x <= patrolLeftBound) {
                                 turnAround = true;
                             }
-                        } else {
-                             // General map boundary check for other levels' ground enemies
-                             if (enemy.x < 0 || enemy.x + enemy.width > totalMapPixelWidth) {
-                                turnAround = true;
-                            }
                         }
 
+
                         if (turnAround) {
-                            enemy.dx *= -1; // Reverse direction
+                            enemy.dx *= -1;
                         }
                     } else if (enemy.type === 'flying') {
-                        // Flying enemy movement: oscillate vertically and move horizontally
                         enemy.y = enemy.initialY + Math.sin(gameFrameCounter * enemy.verticalSpeed) * enemy.verticalAmplitude;
                         enemy.x += enemy.dx;
 
-                        // Reverse horizontal direction if hitting map boundaries or princess boundary
+                        // Reverse horizontal direction if hitting map boundaries
                         if (enemy.x < 0 || enemy.x + enemy.width > totalMapPixelWidth) {
                             enemy.dx *= -1;
                         }
-                        // To prevent flying enemy from passing princess's approximate area:
-                        // This logic should be carefully applied based on flying enemy's spawn location relative to woman.
-                        // For Level 2, the flying enemy is far from the princess. It just needs to stay in bounds.
-                        // The general map boundary check above is sufficient for flying enemies if they are not near the princess.
                     }
                 });
 
-                // --- Check Collisions (Man vs. Enemies, Man vs. Collectibles) ---
                 enemies.forEach(enemy => {
-                    if (!man.isHit && // Only take damage if not currently invincible
+                    if (!man.isHit &&
                         man.x < enemy.x + enemy.width &&
                         man.x + man.width > enemy.x &&
                         man.y < enemy.y + enemy.height &&
                         man.y + man.height > enemy.y
                     ) {
                         gameOver = true;
-                        messageText = "Game Over!\nYou were caught by an enemy!"; // Updated for multiline
+                        deathCount++; // Increment death count
+                        deathCounter.textContent = `Deaths: ${deathCount}`;
+                        messageText = "Game Over!\nYou were caught by an enemy!";
                         restartButton.classList.remove('hidden');
-                        nextLevelButton.classList.add('hidden'); // Hide next level button on game over
+                        nextLevelButton.classList.add('hidden');
+                        playAgainButton.classList.add('hidden'); // Hide Play Again
                     }
                 });
 
@@ -1116,25 +1330,26 @@
                         man.y + man.height > collectible.y
                     ) {
                         collectible.collected = true;
-                        score += 100; // Add score for collecting
-                        scoreDisplay.textContent = `Score: ${score}`;
+                        score += collectible.points;
+                        scoreDisplay.textContent = `Score: ${score}/${totalCollectiblesCurrentLevel}`;
                     }
                 });
 
-                // Handle man being hit (invincibility timer) - outside collision checks
-                if (man.isHit) {
-                    man.hitTimer--;
-                    if (man.hitTimer <= 0) {
-                        man.isHit = false; // Invincibility wears off
+                // Check for Key collection
+                if (levelKey && !levelKey.collected) {
+                    if (intersectRect(man, levelKey)) {
+                        levelKey.collected = true;
+                        hasKey = true;
+                        messageText = "You got the key!";
+                        messageTimer = 90; // Show message for 1.5 seconds
+                        initialMessageActive = true; // Ensure message appears
                     }
                 }
 
-                // Check for rescue collision (only if game is active)
+                // Check for rescue collision
                 checkRescueCollision();
             }
 
-            // Always update clouds and confetti, regardless of game state
-            // Clouds are for background animation
             clouds.forEach(cloud => {
                 cloud.x += cloud.speed;
                 if (cloud.x - cameraX > canvas.width + cloud.width) {
@@ -1143,26 +1358,20 @@
                 }
             });
 
-            // Confetti particles continue animating after game ends
             confettiParticles = confettiParticles.filter(p => {
-                p.dy += GRAVITY * 0.5; // Confetti falls slower
+                p.dy += GRAVITY * 0.5;
                 p.x += p.dx;
                 p.y += p.dy;
                 p.lifetime--;
-                return p.lifetime > 0; // Keep particle if still alive
+                return p.lifetime > 0;
             });
 
-            // Update camera position to follow the man, clamped to map boundaries
-            // This needs to be outside the !gameEnded && !gameOver block
-            // because camera should still follow the man if he's falling into the void
             cameraX = man.x - canvas.width / 2 + man.width / 2;
             cameraX = Math.max(0, Math.min(cameraX, totalMapPixelWidth - canvas.width));
             
-            // Adjust cameraY to follow the player vertically
-            // Clamped within the map height
             cameraY = man.y - (canvas.height / 2) + (man.height / 2);
             cameraY = Math.max(0, Math.min(cameraY, totalMapPixelHeight - canvas.height));
-            if (cameraY < 0) cameraY = 0; // Ensure camera doesn't go above top of map
+            if (cameraY < 0) cameraY = 0;
         }
 
         // Check if man has rescued the woman
@@ -1173,18 +1382,53 @@
                 man.y < woman.y + woman.height &&
                 man.y + man.height > woman.y
             ) {
-                if (!gameEnded) { // Only trigger confetti once
+                if (currentLevel === 3 && levelGate && !levelGate.isOpen) {
+                    if (!hasKey) {
+                        // This message should always appear when the player reaches the locked gate without the key
+                        messageText = "Saaniya is trapped!\nFind the key to open the gate!";
+                        messageTimer = 120; // Show for 2 seconds
+                        initialMessageActive = true; // Keep message active for a duration
+                        return; // Prevent level end
+                    } else {
+                        levelGate.isOpen = true; // Open the gate
+                        // Remove the gate tiles from the game map for collision and drawing
+                        const gateCol = Math.floor(levelGate.x / gridSize);
+                        const gateTopRow = Math.floor(levelGate.y / gridSize); // Top part of the 2-tile high gate
+                        
+                        if (gameMap[gateTopRow] && gameMap[gateTopRow][gateCol] === 'X') {
+                            gameMap[gateTopRow][gateCol] = ' '; // Clear the top part of the gate
+                        }
+                        const gateBottomRow = gateTopRow + 1; // Bottom part of the 2-tile high gate
+                        if (gameMap[gateBottomRow] && gameMap[gateBottomRow][gateCol] === 'X') {
+                            gameMap[gateBottomRow][gateCol] = ' '; // Corrected: use gateCol
+                        }
+
+                        messageText = "The gate is open!";
+                        messageTimer = 90;
+                        initialMessageActive = true;
+                    }
+                }
+
+                // If it's not level 3, or if it's level 3 and the gate is now open
+                if (!gameEnded) {
                     spawnConfetti();
                 }
                 gameEnded = true;
+                
+                // Unlock next level logic
+                unlockedLevels = Math.max(unlockedLevels, currentLevel + 1);
+                updateLevelSelector(); // Update button states
+
                 if (currentLevel < Object.keys(gameMaps).length) {
                     messageText = `Level ${currentLevel} Complete!\nPress 'Next Level' to continue.`;
                     nextLevelButton.classList.remove('hidden');
-                    restartButton.classList.add('hidden'); // Hide restart if next level is available
+                    restartButton.classList.add('hidden');
+                    playAgainButton.classList.add('hidden');
                 } else {
-                    messageText = "You rescued her!\nAll levels complete!";
-                    nextLevelButton.classList.add('hidden'); // No more levels
-                    restartButton.classList.remove('hidden'); // Only restart is an option
+                    messageText = "You rescued her!\nAll levels complete!\nWant to play again?";
+                    nextLevelButton.classList.add('hidden');
+                    restartButton.classList.add('hidden'); // Hide restart
+                    playAgainButton.classList.remove('hidden'); // Show Play Again
                 }
             }
         }
@@ -1198,7 +1442,7 @@
 
             // Draw enemies
             enemies.forEach(enemy => {
-                drawCharacter(enemy, cameraX); // Pass enemy object directly
+                drawCharacter(enemy, cameraX);
             });
 
             // Draw collectibles
@@ -1206,26 +1450,33 @@
                 if (!collectible.collected) {
                     ctx.fillStyle = collectible.color;
                     ctx.beginPath();
-                    // Apply cameraY to collectible drawing
                     ctx.arc(collectible.x - cameraX + collectible.width / 2, collectible.y - cameraY + collectible.height / 2, collectible.width / 2, 0, Math.PI * 2);
                     ctx.fill();
-                    ctx.strokeStyle = '#e67e22'; // Darker orange for coin outline
+                    ctx.strokeStyle = '#e67e22';
                     ctx.lineWidth = 2;
                     ctx.stroke();
                 }
             });
 
-            drawCharacter(man, cameraX, man.dx !== 0); // cameraY handled internally by drawCharacter
-            drawCharacter(woman, cameraX); // cameraY handled internally by drawCharacter
+            // Draw Key if it exists and is not collected
+            if (levelKey && !levelKey.collected) {
+                drawCharacter(levelKey, cameraX);
+            }
+
+            // Draw Haroon
+            drawCharacter(man, cameraX, man.dx !== 0, false); // Pass true if walking, false for idle
+
+            // Draw Saaniya
+            drawCharacter(woman, cameraX, false, true); // Always true for idle animation
 
             // Draw confetti particles
             confettiParticles.forEach(p => {
                 ctx.fillStyle = p.color;
-                ctx.fillRect(p.x - cameraX, p.y - cameraY, p.size, p.size); // Apply cameraY
+                ctx.fillRect(p.x - cameraX, p.y - cameraY, p.size, p.size);
             });
 
             // Draw overlay messages if game is ended or over OR if it's the initial message
-            if (gameEnded || gameOver || initialMessageActive) { // Show message only if game is over/ended or initial message is active
+            if (gameEnded || gameOver || initialMessageActive) {
                 drawOverlayMessage(messageText);
             }
         }
@@ -1240,24 +1491,43 @@
 
             gameEnded = false;
             gameOver = false;
-            score = 0; // Reset score for new level
-            scoreDisplay.textContent = `Score: ${score}`;
-            levelDisplay.textContent = `Level: ${currentLevel}`; // Update level display
-            messageText = "Use Arrow Keys (Left/Right/Up)\nor Touch Controls to move and jump!"; // Reset initial message
-            messageTimer = 180; // Reset timer for initial message
-            initialMessageActive = true; // Set initial message back to active
+            score = 0; // Reset score for new game
+            
+            levelDisplay.textContent = `Level: ${currentLevel}`;
+            deathCounter.textContent = `Deaths: ${deathCount}`; // Update death counter display
+            
+            // Set initial message only for level 1 or specific level 3 scenario
+            if (currentLevel === 1) {
+                messageText = "Use Arrow Keys (Left/Right/Up)\nor Touch Controls to move and jump!";
+                messageTimer = 180;
+                initialMessageActive = true;
+            } else if (currentLevel === 3 && !hasKey) { // Added condition for Level 3
+                // Show "Saaniya is trapped" at the start of Level 3 IF key is not yet obtained
+                messageText = "Saaniya is trapped!\nFind the key to open the gate!";
+                messageTimer = 180; // Show for a good duration
+                initialMessageActive = true;
+            } else {
+                messageText = "";
+                messageTimer = 0;
+                initialMessageActive = false;
+            }
+
             restartButton.classList.add('hidden');
             nextLevelButton.classList.add('hidden');
+            playAgainButton.classList.add('hidden');
 
-            // Re-initialize map and entities for a fresh start for the new level
-            initializeEntities();
-            resizeGame(); // Re-position man and woman, redraw
-            man.dx = 0; man.dy = 0; // Reset velocities
+            initializeEntities(); // This will recalculate totalCollectiblesCurrentLevel
+            scoreDisplay.textContent = `Score: ${score}/${totalCollectiblesCurrentLevel}`; // Update with new total
+            
+            resizeGame();
+            man.dx = 0; man.dy = 0;
             man.onGround = false;
-            man.isHit = false; // Reset hit state
-            man.hitTimer = 0; // Reset hit timer
-            confettiParticles = []; // Clear confetti
-            gameFrameCounter = 0; // Reset frame counter for new level
+            man.isHit = false;
+            man.hitTimer = 0;
+            confettiParticles = [];
+            gameFrameCounter = 0;
+
+            updateLevelSelector(); // Ensure level selector buttons are updated
 
             // Start a new game loop
             gameLoop();
@@ -1266,10 +1536,10 @@
 
         // Game loop
         function gameLoop() {
-            gameLoopId = requestAnimationFrame(gameLoop); // Assign ID to gameLoopId
-            gameFrameCounter++; // Increment frame counter
-            updateGame(); // Update game state
-            drawGame();   // Redraw based on new state
+            gameLoopId = requestAnimationFrame(gameLoop);
+            gameFrameCounter++;
+            updateGame();
+            drawGame();
         }
 
         // Initialize the game when the window loads
@@ -1277,7 +1547,8 @@
             initializeEntities(); // Populate enemies and collectibles based on map
             resizeGame(); // Initial resize and character/woman placement
             window.addEventListener('resize', resizeGame); // Add resize listener
-            gameLoop(); // Start the game loop
+            updateLevelSelector(); // Initial update of level selector
+            resetGame(); // Call resetGame to correctly set initial message for Level 1
         };
     </script>
 </body>
