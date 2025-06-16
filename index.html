@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Help Haroon rescue Saaniya!</title>
-    <!-- Tailwind CSS CDN for general page styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <style>
@@ -102,7 +101,8 @@
             transform: translateY(2px); /* Press effect */
         }
 
-        .restart-button, .next-level-button, .play-again-button { /* Added .next-level-button, .play-again-button */
+        /* Styles for the Restart button - now explicitly visible/hidden via JS */
+        .restart-button, .next-level-button, .restart-from-beginning-button {
             background-color: #e53e3e; /* Red for restart */
             color: white;
             padding: 0.75rem 1.5rem;
@@ -115,19 +115,30 @@
             transition: background-color 0.2s ease, transform 0.1s ease;
             margin-top: 1rem;
         }
-
-        .next-level-button { /* Style specifically for next level button */
+        .next-level-button {
             background-color: #28a745; /* Green for next level */
         }
-
-        .play-again-button { /* Style specifically for play again button */
-            background-color: #4CAF50; /* Green */
+        .restart-from-beginning-button {
+            background-color: #ffc107; /* Orange for restart from beginning */
+            color: #333; /* Darker text for visibility */
         }
 
-        .restart-button:active, .next-level-button:active, .play-again-button:active {
+        .restart-button:active {
             background-color: #c53030;
             transform: translateY(2px);
         }
+        .next-level-button:active {
+            background-color: #218838;
+            transform: translateY(2px);
+        }
+        .restart-from-beginning-button:active {
+            background-color: #e0a800;
+            transform: translateY(2px);
+        }
+        .hidden {
+            display: none;
+        }
+
 
         .level-selector {
             display: flex;
@@ -178,14 +189,13 @@
         </div>
         <div id="message-box" class="message-box">Use Arrow Keys (Left/Right/Up) or Touch Controls to move and jump!</div>
         <canvas id="gameCanvas"></canvas>
-        <div class="controls"> <!-- Controls for all screen sizes -->
-            <button id="leftButton" class="control-button">◀</button>
+        <div class="controls"> <button id="leftButton" class="control-button">◀</button>
             <button id="jumpButton" class="control-button">JUMP</button>
             <button id="rightButton" class="control-button">▶</button>
         </div>
         <button id="restartButton" class="restart-button hidden">Restart Level</button>
         <button id="nextLevelButton" class="next-level-button hidden">Next Level</button>
-        <button id="playAgainButton" class="play-again-button hidden">Play Again from Level 1</button>
+        <button id="restartFromBeginningButton" class="restart-from-beginning-button hidden">Restart from Beginning</button>
 
         <div class="level-selector" id="levelSelector">
             <button id="level1Button" class="level-button current-level" data-level="1">Level 1</button>
@@ -375,17 +385,18 @@
         // Gate definition (new obstacle type)
         const gateType = {
             width: gridSize,
-            height: 2 * gridSize, // 2 tiles tall
+            height: gridSize, // Each 'X' tile is 1 grid unit
             shape: [
-                [1, 1, 1, 1],
+                [0, 1, 1, 0], // Top horizontal bar, slightly rounded
+                [1, 2, 2, 1], // Vertical posts with inner detail
+                [1, 2, 2, 1],
+                [1, 1, 1, 1], // Middle horizontal bar
                 [1, 2, 2, 1],
                 [1, 2, 2, 1],
-                [1, 1, 1, 1],
-                [1, 2, 2, 1],
-                [1, 2, 2, 1],
-                [1, 1, 1, 1]
+                [0, 1, 1, 0]  // Bottom horizontal bar
             ],
             colorMap: {
+                0: 'transparent',
                 1: '#5C4033', // Dark wood/metal frame
                 2: '#8B4513'  // Lighter wood/metal bars
             }
@@ -420,8 +431,8 @@
         // Key object
         let levelKey = null; // Represents the key in the current level
 
-        // Gate object
-        let levelGate = null; // Represents the gate in the current level
+        // Gate objects (array of all 'X' tile coordinates)
+        let levelGates = [];
 
 
         // Cloud definition
@@ -446,87 +457,78 @@
         let confettiParticles = []; // Array to hold confetti particles
 
 
-        // Game Maps (separated by level)
+        // Game Maps (separated by level) - All maps are now 20 rows tall
         const gameMaps = {
             1: [
-                // Row 0 (Sky)
                 [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
                 [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
                 [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
                 [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
-                // Row 4 (Higher Platforms)
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
                 [' ', ' ', ' ', ' ', ' ', ' ', ' ', 'C', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', ' ', ' ', ' ', 'C', ' ', ' ', ' ', 'C'],
-                // Row 5 (Mid-level Platforms/Obstacles)
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
-                // Row 6 (More Platforms)
-                [' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', 'E', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' '],
-                // Row 7 (Main Ground and Gaps)
-                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', 'C', ' ', 'O', 'O', 'O', ' ', ' ', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G'],
-                // Row 8 (Obstacles/Ground)
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', 'O', 'O', 'O', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'E', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' '],
                 ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', ' ', ' ', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G'],
-                // Row 9 (Bottom Layer - for falling into void)
-                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G']
+                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', ' ', ' ', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G'],
+                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', ' ', ' ', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G']
             ],
-            2: [ // Level 2 - More challenging!
+            2: [ // Level 2 - More challenging! (Extended to 20 rows)
                 [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
                 [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'F', ' ', ' ', ' ', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // Flying enemy starts at col 23, moves left
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'F', ' ', ' ', ' ', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
                 [' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'E', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' '],
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // Platform with enemy wider
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', 'O', 'O', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // Obstacle is now 5 blocks wide, 'F' flying enemy removed from here
-                [' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', 'E', ' ', 'C', ' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' '], // New platform, new enemy
-                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', ' ', 'G', 'G', 'G', 'O', 'O', 'O', 'O', 'O', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', 'G', 'G', 'G', 'G', 'G'], // Taller obstacle after pit, 'O' is 2 tiles tall
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', 'O', 'O', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'E', ' ', 'C', ' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' '],
+                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', ' ', 'G', 'G', 'G', 'O', 'O', 'O', 'O', 'O', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', 'G', 'G', 'G', 'G', 'G'],
                 ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', ' ', 'G', 'G', 'G', 'O', 'O', 'O', 'O', 'O', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', 'G', 'G', 'G', 'G', 'G'],
                 ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G']
+
             ],
-            3: [ // Level 3 - Redesigned from scratch (100x40 map)
-                Array(100).fill(' '), // 0
-                Array(100).fill(' '), // 1
-                Array(100).fill(' '), // 2
-                Array(100).fill(' '), // 3
-                Array(100).fill(' '), // 4
-                Array(100).fill(' '), // 5
-                Array(100).fill(' '), // 6
-                Array(100).fill(' '), // 7
-                Array(100).fill(' '), // 8
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'K', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 9 - KEY
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 10 - Platform for key
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'F', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 11 - Flying enemy
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 12 - Higher Platform for Key path
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 13 - Platform below flying enemy
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 14 - Platform near start of key path climb
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 15
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 16
-
-                // Main ground and initial platforms (Rows 17-29)
-                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G'], // 17 - Main starting ground (player spawns here)
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 18 - Padding for player height
-                [' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 19 - Collectible near start
-                [' ', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 20 - Platform after start
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', 'E', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 21 - Ground enemy
-                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G'], // 22 - Solid ground
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 23
-                // Pit section
-                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'G'], // 24 - Edge of pit
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 25
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 26 - Pit recovery platform
-                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G'], // 27 - Ground after pit
-
-                // Vertical climb to Key path and Princess area
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 28
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 29
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 30
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 31
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 32
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 33
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 34
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 35
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 36
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 37
-                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // 38
-                Array(100).fill('G') // 39 - Bottommost ground, always solid
+            3: [ // LEVEL 3 - NEW TALLER STATIC DEFINITION (40 columns wide, 20 rows tall)
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'C', ' '],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'F', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'K', 'O', 'O', 'O', 'O', 'O'],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', 'O', 'O', 'O', 'O', 'O'],
+                [' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'F', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', 'O', 'O'],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', ' ', ' ', ' ', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', 'O', 'O'],
+                [' ', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', 'O', 'O'],
+                [' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'C', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', 'P', 'P', 'P', 'O', 'O', 'O', 'O', 'O'],
+                [' ', ' ', ' ', 'G', 'G', 'G', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', 'O', 'O', 'O', 'O', 'O', 'O', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', 'O', 'O'],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', 'O', 'O'],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'E', ' ', ' ', 'C', ' ', ' ', 'X', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', 'O', 'O'],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', ' ', ' ', ' ', ' ', 'E', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'X', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', 'O', 'O'],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'P', 'P', 'P', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'X', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', 'O', 'O'],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'G', 'G', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'X', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', 'O', 'O'],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'X', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', 'O', 'O'],
+                [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'X', ' ', ' ', ' ', ' ', ' ', 'O', 'O', 'O', 'O', 'O'],
+                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', ' ', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'X', 'G', 'G', 'C', 'C', 'C', 'O', 'O', 'O', 'O', 'O'],
+                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', ' ', ' ', ' ', ' ', ' ', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'X', 'G', 'G', 'C', 'C', 'C', 'O', 'O', 'O', 'O', 'O'],
+                ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G']
             ]
         };
+
+
         let currentLevel = 1;
         let gameMap = []; // The game's active map, which can be modified
         let mapWidthTiles;
@@ -539,8 +541,8 @@
         let gameOver = false; // When man dies
         let score = 0;
         let deathCount = 0; // New: Death counter
-        let hasKey = false; // New: For Level 3
-        let unlockedLevels = 1; // New: Tracks unlocked levels
+        let hasKey = false;
+        let unlockedLevels = 1; // Changed: Only level 1 is initially unlocked
 
         let messageText = ""; // Changed initial message to empty
         let messageTimer = 0; // Changed initial timer to 0
@@ -550,9 +552,10 @@
         let scoreDisplay = document.getElementById('scoreDisplay');
         let levelDisplay = document.getElementById('levelDisplay');
         let deathCounter = document.getElementById('deathCounter'); // New: Death counter display
-        let restartButton = document.getElementById('restartButton');
-        let nextLevelButton = document.getElementById('nextLevelButton');
-        let playAgainButton = document.getElementById('playAgainButton'); // New button
+        let restartButton = document.getElementById('restartButton'); // Re-added restart button
+        let nextLevelButton = document.getElementById('nextLevelButton'); // New: Next Level button
+        let restartFromBeginningButton = document.getElementById('restartFromBeginningButton'); // New: Restart From Beginning button
+        
         let levelSelector = document.getElementById('levelSelector');
         let levelButtons = {}; // To store references to level buttons
 
@@ -585,17 +588,18 @@
         const rightButton = document.getElementById('rightButton');
         const jumpButton = document.getElementById('jumpButton');
         
-        restartButton.addEventListener('click', resetGame);
-        nextLevelButton.addEventListener('click', () => {
+        // Button event listeners
+        restartButton.addEventListener('click', () => resetGame()); // Restart current level
+        nextLevelButton.addEventListener('click', () => { // Go to next level
             currentLevel++;
             resetGame();
         });
-        playAgainButton.addEventListener('click', () => {
-            currentLevel = 1; // Reset to level 1
-            deathCount = 0; // Reset deaths for a new game
+        restartFromBeginningButton.addEventListener('click', () => { // Restart from Level 1
+            currentLevel = 1;
             unlockedLevels = 1; // Reset unlocked levels
             resetGame();
         });
+
 
         // Initialize level selector buttons
         for (let i = 1; i <= Object.keys(gameMaps).length; i++) {
@@ -664,12 +668,16 @@
             const headerHeight = document.querySelector('h1').offsetHeight;
             const gameInfoHeight = document.getElementById('scoreDisplay').parentElement.offsetHeight;
             const controlsHeight = document.querySelector('.controls').offsetHeight;
-            const restartButtonHeight = restartButton.classList.contains('hidden') ? 0 : restartButton.offsetHeight;
-            const nextLevelButtonHeight = nextLevelButton.classList.contains('hidden') ? 0 : nextLevelButton.offsetHeight;
-            const playAgainButtonHeight = playAgainButton.classList.contains('hidden') ? 0 : playAgainButton.offsetHeight;
-            const levelSelectorHeight = levelSelector.offsetHeight; // Get the height of the level selector div
+            const levelSelectorHeight = levelSelector.offsetHeight; 
 
-            let uiElementsTotalHeight = headerHeight + gameInfoHeight + controlsHeight + restartButtonHeight + nextLevelButtonHeight + playAgainButtonHeight + levelSelectorHeight + containerPaddingY;
+            // Calculate additional height for buttons, only if they are not hidden
+            let additionalButtonHeight = 0;
+            if (!restartButton.classList.contains('hidden')) additionalButtonHeight = Math.max(additionalButtonHeight, restartButton.offsetHeight + 10);
+            if (!nextLevelButton.classList.contains('hidden')) additionalButtonHeight = Math.max(additionalButtonHeight, nextLevelButton.offsetHeight + 10);
+            if (!restartFromBeginningButton.classList.contains('hidden')) additionalButtonHeight = Math.max(additionalButtonHeight, restartFromBeginningButton.offsetHeight + 10);
+
+
+            let uiElementsTotalHeight = headerHeight + gameInfoHeight + controlsHeight + levelSelectorHeight + containerPaddingY + additionalButtonHeight;
 
             uiElementsTotalHeight += 20; // Extra buffer for vertical space
 
@@ -693,35 +701,17 @@
             canvas.style.width = '100%';
             canvas.style.height = 'auto';
 
+            // Initial player and woman placement (absolute world coordinates) - now consistently row 17
+            man.x = man.initialX;
+            man.y = (17 * gridSize) - man.height; // Placed on main ground (row 17 for all levels)
+
+            woman.x = (mapWidthTiles - 10) * gridSize; // Adjusted for new Level 3 layout
+            woman.y = (17 * gridSize) - woman.height; // Updated to row 17 for all levels
+
+
             // Camera Y will be fixed to the bottom of the map, only scrolls when map is taller than canvas
             cameraY = totalMapPixelHeight - canvas.height;
             if (cameraY < 0) cameraY = 0; // If map is shorter than canvas, cameraY is 0 (top of map visible)
-
-
-            // Initial player and woman placement (absolute world coordinates)
-            // Default for Level 1 & 2
-            man.x = man.initialX;
-            man.y = (7 * gridSize) - man.height; // Placed on main ground (row 7)
-
-            woman.x = (mapWidthTiles - 5) * gridSize; // 5 tiles from the right edge
-            woman.y = (7 * gridSize) - woman.height; // On same main ground as man
-
-            // Specific adjustments for Level 3
-            if (currentLevel === 3) {
-                // Man starts at (col 2, row 17) in the new Level 3 map
-                man.x = 2 * gridSize;
-                man.y = (17 * gridSize) - man.height; // Positioned on ground at row 17
-
-                // Woman at (col 91, row 26) in new Level 3 map, behind the gate
-                woman.x = 91 * gridSize;
-                woman.y = (26 * gridSize) - woman.height; // Positioned on ground at row 26
-
-                if (levelGate) {
-                    // Gate is at (col 90, row 26) in the new Level 3 map (it's 2 tiles tall, so it occupies 26 and 27)
-                    levelGate.x = 90 * gridSize;
-                    levelGate.y = 26 * gridSize; // Top of the gate (row 26)
-                }
-            }
 
 
             drawGame(); // Initial draw after resize and placement
@@ -730,7 +720,7 @@
         // Function to update level selector button states
         function updateLevelSelector() {
             for (let i = 1; i <= Object.keys(gameMaps).length; i++) {
-                const btn = levelButtons[i];
+                const btn = document.getElementById(`level${i}Button`);
                 if (btn) {
                     if (i <= unlockedLevels) {
                         btn.classList.remove('disabled');
@@ -754,7 +744,7 @@
             confettiParticles = []; // Clear any lingering confetti
             hasKey = false; // Reset key state for each level
             levelKey = null; // Ensure key is nullified if not present
-            levelGate = null; // Ensure gate is nullified if not present
+            levelGates = []; // Reset array of gate tiles
 
             // Add some initial clouds (absolute map coordinates, will be drawn with parallax)
             clouds.push(createCloud(100, 50, 100, 40, 0.5));
@@ -794,7 +784,7 @@
                         collectibles.push(createCollectible(px + gridSize / 4, py + gridSize / 4)); // Center coin in tile
                         totalCollectiblesCurrentLevel += 100; // Add to total
                         gameMap[row][col] = ' '; // Clear collectible
-                    } else if (tileType === 'K') { // Initialize Key
+                    } else if (tileType === 'K') { // Key can now be in Level 3
                         levelKey = {
                             x: px + (gridSize - keyType.width) / 2, // Center key horizontally within a grid
                             y: py + (gridSize - keyType.height) / 2, // Center key vertically within a grid
@@ -805,17 +795,13 @@
                             collected: false
                         };
                         gameMap[row][col] = ' '; // Clear key spawn
-                    } else if (tileType === 'X') { // Initialize Gate
-                        levelGate = {
-                            x: px,
-                            y: py,
-                            width: gateType.width,
-                            height: gateType.height,
-                            shape: gateType.shape,
-                            colorMap: gateType.colorMap,
-                            isOpen: false
-                        };
-                        // The 'X' remains on the map as a blocking tile until opened
+                    } else if (tileType === 'X') { // Gate tile
+                        levelGates.push({ x: px, y: py }); // Store coordinates of each 'X' tile
+                        // The 'X' remains on the map as a blocking tile until opened (controlled by hasKey)
+                    } else if (tileType === 'W') { // Woman's initial position
+                         // Woman's position is handled in resizeGame for initial placement relative to game end
+                         // Ensure she's placed on the ground layer
+                        gameMap[row][col] = ' '; // Clear woman's spawn point from map data
                     }
                 }
             }
@@ -850,10 +836,15 @@
 
             // Apply walking animation for man
             if (isWalking && character === man) {
-                const step = Math.floor(character.animationFrame / character.animationSpeed) % man.walkingShape.length;
-                currentShape = man.walkingShape; // For man, walkingShape is the animation frame
+                // Determine animation frame for walking
+                const step = Math.floor(gameFrameCounter / character.animationSpeed) % 2; // Simple 2-frame walk cycle
+                if (step === 0) {
+                    currentShape = man.shape; // Standing pose
+                } else {
+                    currentShape = man.walkingShape; // Walking pose
+                }
             } else if (character === man) {
-                currentShape = man.shape; // Default standing shape
+                currentShape = man.shape; // Default standing shape if not walking
             }
 
             // Apply idle animation for woman
@@ -872,8 +863,14 @@
                     const color = character.colorMap[pixelType];
                     if (color && color !== 'transparent') {
                         ctx.fillStyle = color;
+                        // For left-facing man, draw pixels from right to left
+                        let pixelX = drawX + colIndex * charPixelDrawSizeX;
+                        if (character === man && character.currentDirection === 'left') {
+                            pixelX = drawX + (character.shape[0].length - 1 - colIndex) * charPixelDrawSizeX;
+                        }
+
                         ctx.fillRect(
-                            drawX + colIndex * charPixelDrawSizeX,
+                            pixelX,
                             drawY + rowIndex * charPixelDrawSizeY,
                             charPixelDrawSizeX,
                             charPixelDrawSizeY
@@ -932,9 +929,8 @@
                         ctx.fillRect(drawX, drawY, gridSize, gridSize / 2); // Thinner platform
                         ctx.fillStyle = '#1e8449'; // Darker green underside
                         ctx.fillRect(drawX, drawY + gridSize / 2, gridSize, gridSize / 2);
-                    } else if (tileType === 'X' && levelGate && !levelGate.isOpen) { // Draw gate if it's there and not open
-                        drawCharacter(levelGate, cameraX);
                     }
+                    // 'X' (gate) drawing is now handled globally in drawGame.
                 }
             }
         }
@@ -946,99 +942,87 @@
             const turretColor = '#808080';
             const battlementColor = '#696969';
             const flagColor = '#e74c3c';
-            const deepGroundColor = '#3a3a3a'; // Slightly lighter dark ground
 
-            // 1. Fill entire canvas with deep ground color (as a base layer)
-            ctx.fillStyle = deepGroundColor;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Parallax factor for horizontal movement
+            const parallaxFactorX = 0.5;
+            const parallaxOffsetX = cameraX * parallaxFactorX;
 
-            // Calculate the absolute Y coordinate of the main ground level in the world
-            // (assuming row 7 is where the main ground starts in the map data, adjust for Level 3 if needed)
-            let groundRefRow = 7; // Default for level 1 & 2
-            if (currentLevel === 3) {
-                groundRefRow = 26; // Main ground for Level 3 (where player starts, and gate is)
-            }
-            const mapGroundAbsoluteY = groundRefRow * gridSize;
+            // Fixed vertical position for the top of the main castle wall on the canvas
+            // Adjusted to be lower (e.g., 60% down from the top of the canvas)
+            const castleWallTopYOnCanvas = canvas.height * 0.6; // Adjusted from 0.5 to 0.6
 
-
-            // 2. Draw Sky (will overlay part of the deep ground)
+            // 1. Draw Sky background (fills from top down to the top of the main castle wall)
             ctx.fillStyle = '#7da5d9'; // Sky blue
-            // Sky should extend down to the 'ground' level in the background
-            const castleTopRelativeToGround = 3 * gridSize; // How many grid units the castle wall extends UP from the map ground
-            const skyEndDrawY = mapGroundAbsoluteY - castleTopRelativeToGround - (cameraY * 0.5); // Apply parallax
-            ctx.fillRect(0, 0, canvas.width, Math.max(0, skyEndDrawY));
+            ctx.fillRect(0, 0, canvas.width, castleWallTopYOnCanvas); // Sky covers everything above main wall top
 
+            // Castle drawing: anchored to castleWallTopYOnCanvas
+            const mainWallHeight = 10 * gridSize; // Height of the main wall portion
+            const turretHeightAboveWall = 5 * gridSize; // Height of the main turrets above the main wall
 
-            // Parallax offset for background elements
-            const parallaxOffsetX = cameraX * 0.5;
-            const parallaxOffsetY = cameraY * 0.5;
-
-            const backgroundRepeatWidth = gridSize * 15;
-
+            const backgroundRepeatWidth = gridSize * 15; // Width of one repeating castle section
             const startDrawX = - (parallaxOffsetX % backgroundRepeatWidth);
             const numRepeats = Math.ceil((canvas.width + backgroundRepeatWidth) / backgroundRepeatWidth) + 1;
 
-            // Define how much the castle extends *below* the visible map ground
-            const castleFoundationDepth = 15 * gridSize; // Increased foundation depth to cover entire map height
-
-            for (let i = 0; i < numRepeats + 1; i++) {
+            for (let i = 0; i < numRepeats; i++) {
                 const currentSectionX = startDrawX + i * backgroundRepeatWidth;
 
-                // Define castle base drawing Y relative to mapGroundAbsoluteY
-                const castleWallDrawY = mapGroundAbsoluteY - castleTopRelativeToGround - parallaxOffsetY;
-
-                // --- Base Wall (extended downwards) ---
+                // Main Castle Wall
                 ctx.fillStyle = castleColor;
-                ctx.fillRect(currentSectionX, castleWallDrawY, gridSize * 15, castleTopRelativeToGround + castleFoundationDepth);
+                ctx.fillRect(currentSectionX, castleWallTopYOnCanvas, gridSize * 15, mainWallHeight);
 
-                // --- Main Towers (Taller) ---
-                const mainTurretHeight = 4 * gridSize;
-                const mainTurretDrawY = castleWallDrawY - mainTurretHeight;
+                // Main Towers (Taller) - start from the very top of the main wall
                 ctx.fillStyle = turretColor;
-                ctx.fillRect(currentSectionX + 1 * gridSize, mainTurretDrawY, 2 * gridSize, mainTurretHeight);
-                ctx.fillRect(currentSectionX + 12 * gridSize, mainTurretDrawY, 2 * gridSize, mainTurretHeight);
+                ctx.fillRect(currentSectionX + 1 * gridSize, castleWallTopYOnCanvas - turretHeightAboveWall, 2 * gridSize, mainWallHeight + turretHeightAboveWall); // Left turret
+                ctx.fillRect(currentSectionX + 12 * gridSize, castleWallTopYOnCanvas - turretHeightAboveWall, 2 * gridSize, mainWallHeight + turretHeightAboveWall); // Right turret
 
-                // --- Smaller Tower ---
-                const shortTurretHeight = 2 * gridSize;
-                const shortTurretDrawY = castleWallDrawY - shortTurretHeight;
+                // Smaller Tower - positioned within the main wall or slightly above
                 ctx.fillStyle = turretColor;
-                ctx.fillRect(currentSectionX + 6 * gridSize, shortTurretDrawY, 2 * gridSize, shortTurretHeight);
+                const smallTowerHeight = 4 * gridSize; // Height of smaller tower above main wall
+                ctx.fillRect(currentSectionX + 6 * gridSize, castleWallTopYOnCanvas + mainWallHeight - smallTowerHeight, 2 * gridSize, smallTowerHeight); // Middle tower base at main wall top
 
-                // --- Battlement details ---
+                // Battlement details (on main wall top)
                 ctx.fillStyle = battlementColor;
                 for (let j = 0; j < 15; j++) {
                     if (j % 2 === 0) {
-                        ctx.fillRect(currentSectionX + j * gridSize, castleWallDrawY, gridSize, gridSize / 2);
+                        ctx.fillRect(currentSectionX + j * gridSize, castleWallTopYOnCanvas, gridSize, gridSize / 2);
                     }
                 }
-                ctx.fillRect(currentSectionX + 1 * gridSize, mainTurretDrawY - (gridSize / 2), gridSize / 2, gridSize / 2);
-                ctx.fillRect(currentSectionX + 1 * gridSize + gridSize, mainTurretDrawY - (gridSize / 2), gridSize / 2, gridSize / 2);
-                ctx.fillRect(currentSectionX + 12 * gridSize, mainTurretDrawY - (gridSize / 2), gridSize / 2, gridSize / 2);
-                ctx.fillRect(currentSectionX + 12 * gridSize + gridSize, mainTurretDrawY - (gridSize / 2), gridSize / 2, gridSize / 2);
+                // Battlement for main towers (on their very top)
+                ctx.fillRect(currentSectionX + 1 * gridSize, castleWallTopYOnCanvas - turretHeightAboveWall, gridSize / 2, gridSize / 2);
+                ctx.fillRect(currentSectionX + 1 * gridSize + gridSize / 2, castleWallTopYOnCanvas - turretHeightAboveWall, gridSize / 2, gridSize / 2);
+                ctx.fillRect(currentSectionX + 12 * gridSize, castleWallTopYOnCanvas - turretHeightAboveWall, gridSize / 2, gridSize / 2);
+                ctx.fillRect(currentSectionX + 12 * gridSize + gridSize / 2, castleWallTopYOnCanvas - turretHeightAboveWall, gridSize / 2, gridSize / 2);
+                // Battlement for smaller tower
+                ctx.fillRect(currentSectionX + 6 * gridSize, castleWallTopYOnCanvas + mainWallHeight - smallTowerHeight - (gridSize / 2), gridSize / 2, gridSize / 2);
+                ctx.fillRect(currentSectionX + 6 * gridSize + gridSize / 2, castleWallTopYOnCanvas + mainWallHeight - smallTowerHeight - (gridSize / 2), gridSize / 2, gridSize / 2);
 
-                // --- Windows ---
-                ctx.fillStyle = windowColor;
-                ctx.fillRect(currentSectionX + 3 * gridSize, castleWallDrawY + (0.5 * gridSize), gridSize, gridSize);
-                ctx.fillRect(currentSectionX + 9 * gridSize, castleWallDrawY + (0.5 * gridSize), gridSize, gridSize);
-                ctx.fillRect(currentSectionX + 1.5 * gridSize, mainTurretDrawY + gridSize, gridSize, gridSize / 2);
-                ctx.fillRect(currentSectionX + 12.5 * gridSize, mainTurretDrawY + gridSize, gridSize, gridSize / 2);
-                ctx.fillStyle = windowColor;
-                ctx.fillRect(currentSectionX + 6.5 * gridSize, shortTurretDrawY + gridSize / 2, gridSize, gridSize / 2);
-                ctx.fillRect(currentSectionX + 6.5 * gridSize + gridSize / 4, shortTurretDrawY + gridSize, gridSize / 2, gridSize / 2);
 
-                // --- Flag ---
+                // Windows
+                ctx.fillStyle = windowColor;
+                ctx.fillRect(currentSectionX + 3 * gridSize, castleWallTopYOnCanvas + (mainWallHeight / 2), gridSize, gridSize);
+                ctx.fillRect(currentSectionX + 9 * gridSize, castleWallTopYOnCanvas + (mainWallHeight / 2), gridSize, gridSize);
+                ctx.fillRect(currentSectionX + 1.5 * gridSize, castleWallTopYOnCanvas + 2 * gridSize, gridSize, gridSize / 2); // Windows on turrets
+                ctx.fillRect(currentSectionX + 12.5 * gridSize, castleWallTopYOnCanvas + 2 * gridSize, gridSize, gridSize / 2);
+                ctx.fillRect(currentSectionX + 6.5 * gridSize, castleWallTopYOnCanvas + mainWallHeight - smallTowerHeight + gridSize, gridSize, gridSize / 2);
+
+
+                // Flag (on highest turret)
                 ctx.fillStyle = flagColor;
-                ctx.fillRect(currentSectionX + 1.5 * gridSize + gridSize / 2 - 2, mainTurretDrawY - gridSize - 10, 4, gridSize + 10);
-                ctx.fillRect(currentSectionX + 1.5 * gridSize + gridSize / 2 - 2, mainTurretDrawY - gridSize - 10, gridSize, gridSize / 2);
+                const flagPoleTopY = castleWallTopYOnCanvas - turretHeightAboveWall - (2 * gridSize); // Pole above turret battlement
+                ctx.fillRect(currentSectionX + 1.5 * gridSize + gridSize / 2 - 2, flagPoleTopY, 4, 2 * gridSize + 10); // Pole
+                ctx.fillRect(currentSectionX + 1.5 * gridSize + gridSize / 2 - 2, flagPoleTopY, gridSize, gridSize / 2); // Flag fabric
             }
 
-            // Draw clouds
+            // Draw clouds - only affected by horizontal parallax, but y-position fixed relative to canvas top
             clouds.forEach(cloud => {
                 ctx.fillStyle = cloud.color;
+                // Cloud y is set relative to the top of the canvas.
+                // It should be within the blue sky area (0 to castleWallTopYOnCanvas).
+                // Let's adjust cloud.y ranges in createCloud if needed. For now, they should be fine.
                 ctx.beginPath();
-                ctx.arc(cloud.x - parallaxOffsetX + cloud.width * 0.2, cloud.y - parallaxOffsetY + cloud.height * 0.5, cloud.height * 0.5, 0, Math.PI * 2);
-                ctx.arc(cloud.x - parallaxOffsetX + cloud.width * 0.5, cloud.y - parallaxOffsetY + cloud.height * 0.3, cloud.height * 0.7, 0, Math.PI * 2);
-                ctx.arc(cloud.x - parallaxOffsetX + cloud.width * 0.8, cloud.y - parallaxOffsetY + cloud.height * 0.5, cloud.height * 0.6, 0, Math.PI * 2);
+                ctx.arc(cloud.x - parallaxOffsetX + cloud.width * 0.2, cloud.y + cloud.height * 0.5, cloud.height * 0.5, 0, Math.PI * 2);
+                ctx.arc(cloud.x - parallaxOffsetX + cloud.width * 0.5, cloud.y + cloud.height * 0.3, cloud.height * 0.7, 0, Math.PI * 2);
+                ctx.arc(cloud.x - parallaxOffsetX + cloud.width * 0.8, cloud.y + cloud.height * 0.5, cloud.height * 0.6, 0, Math.PI * 2);
                 ctx.fill();
             });
         }
@@ -1152,7 +1136,8 @@
                 for (let row = y1; row < y2; row++) {
                     for (let col = x1; col < x2; col++) {
                         const tileType = getTileAtPixel(col * gridSize, row * gridSize);
-                        if (['G', 'O', 'P'].includes(tileType) || (tileType === 'X' && levelGate && !levelGate.isOpen)) { // Man can't pass closed gate
+                        // Man can't pass closed gate if it's an 'X' tile and hasKey is false
+                        if (['G', 'O', 'P'].includes(tileType) || (tileType === 'X' && !hasKey)) {
                             const tileRect = getTileBoundingBox(col, row);
                             if (intersectRect(nextManRectX, tileRect)) {
                                 if (man.dx > 0) {
@@ -1197,7 +1182,8 @@
                 for (let row = vy1; row < vy2; row++) {
                     for (let col = vx1; col < vx2; col++) {
                         const tileType = getTileAtPixel(col * gridSize, row * gridSize);
-                        if (['G', 'O', 'P'].includes(tileType) || (tileType === 'X' && levelGate && !levelGate.isOpen)) { // Man can't pass closed gate
+                        // Man can't pass closed gate if it's an 'X' tile and hasKey is false
+                        if (['G', 'O', 'P'].includes(tileType) || (tileType === 'X' && !hasKey)) {
                             const tileRect = getTileBoundingBox(col, row);
                             if (intersectRect(nextManRectY, tileRect)) {
                                 if (man.dy > 0) {
@@ -1220,10 +1206,10 @@
                     gameOver = true;
                     deathCount++; // Increment death count
                     deathCounter.textContent = `Deaths: ${deathCount}`;
-                    messageText = "Game Over!\nYou fell into the void!";
-                    restartButton.classList.remove('hidden');
-                    nextLevelButton.classList.add('hidden');
-                    playAgainButton.classList.add('hidden'); // Hide Play Again
+                    messageText = "Game Over!\nYou fell into the void!\nClick 'Restart Level' to try again."; // Modified message
+                    restartButton.classList.remove('hidden'); // Show restart button
+                    nextLevelButton.classList.add('hidden'); // Hide next level button
+                    restartFromBeginningButton.classList.add('hidden'); // Hide restart from beginning button
                     return;
                 }
 
@@ -1261,7 +1247,7 @@
                         let turnAround = false;
                         let checkX_wall_current = enemy.dx > 0 ? enemy.x + enemy.width : enemy.x;
                         let wallTile_current = getTileAtPixel(checkX_wall_current, enemy.y + enemy.height / 2);
-                        if (['G', 'O', 'P'].includes(wallTile_current)) {
+                        if (['G', 'O', 'P'].includes(wallTile_current) || (wallTile_current === 'X' && !hasKey)) {
                             turnAround = true;
                         }
 
@@ -1269,7 +1255,7 @@
                         let checkY_ledge = enemy.y + enemy.height + 1;
                         let ledgeTile = getTileAtPixel(checkX_ledge, checkY_ledge);
 
-                        if (enemyOnGround && !['G', 'O', 'P'].includes(ledgeTile)) {
+                        if (enemyOnGround && !['G', 'O', 'P'].includes(ledgeTile) && !(ledgeTile === 'X' && !hasKey)) {
                             turnAround = true;
                         }
 
@@ -1277,9 +1263,8 @@
                             turnAround = true;
                         }
 
-                        // Level 1 specific enemy patrol (turn when reaching Saaniya's initial X)
+                        // Specific enemy patrol bounds for Level 1, ensuring they don't patrol beyond the woman
                         if (currentLevel === 1) {
-                            // Enemy spawns around col 24, woman at col 35. Enemy should patrol right from spawn, then turn back.
                             const patrolLeftBound = 24 * gridSize; // Enemy spawn X
                             const patrolRightBound = woman.x; // Woman's X coordinate
 
@@ -1315,10 +1300,10 @@
                         gameOver = true;
                         deathCount++; // Increment death count
                         deathCounter.textContent = `Deaths: ${deathCount}`;
-                        messageText = "Game Over!\nYou were caught by an enemy!";
-                        restartButton.classList.remove('hidden');
-                        nextLevelButton.classList.add('hidden');
-                        playAgainButton.classList.add('hidden'); // Hide Play Again
+                        messageText = "Game Over!\nYou were caught by an enemy!\nClick 'Restart Level' to try again."; // Modified message
+                        restartButton.classList.remove('hidden'); // Show restart button
+                        nextLevelButton.classList.add('hidden'); // Hide next level button
+                        restartFromBeginningButton.classList.add('hidden'); // Hide restart from beginning button
                     }
                 });
 
@@ -1335,11 +1320,11 @@
                     }
                 });
 
-                // Check for Key collection
+                // Key logic for any level that has a key
                 if (levelKey && !levelKey.collected) {
                     if (intersectRect(man, levelKey)) {
                         levelKey.collected = true;
-                        hasKey = true;
+                        hasKey = true; // Key collected, gates should disappear
                         messageText = "You got the key!";
                         messageTimer = 90; // Show message for 1.5 seconds
                         initialMessageActive = true; // Ensure message appears
@@ -1366,12 +1351,27 @@
                 return p.lifetime > 0;
             });
 
+            // Adjust camera to follow the player
+            // Keep camera X centered on the player, clamped to map boundaries
             cameraX = man.x - canvas.width / 2 + man.width / 2;
             cameraX = Math.max(0, Math.min(cameraX, totalMapPixelWidth - canvas.width));
             
-            cameraY = man.y - (canvas.height / 2) + (man.height / 2);
-            cameraY = Math.max(0, Math.min(cameraY, totalMapPixelHeight - canvas.height));
-            if (cameraY < 0) cameraY = 0;
+            // For vertical camera, ensure it follows player if the map is taller than the canvas
+            // And if the player moves high up enough
+            const playerCenterY = man.y + man.height / 2;
+            const canvasCenterY = canvas.height / 2;
+
+            // Target camera Y to keep player vertically centered, adjusted for map height
+            let targetCameraY = playerCenterY - canvasCenterY;
+
+            // Clamp cameraY to map boundaries
+            cameraY = Math.max(0, Math.min(targetCameraY, totalMapPixelHeight - canvas.height));
+
+            // If the map is shorter than the canvas height, ensure cameraY is 0 (top of map is visible)
+            if (totalMapPixelHeight < canvas.height) {
+                cameraY = 0;
+            }
+
         }
 
         // Check if man has rescued the woman
@@ -1382,34 +1382,16 @@
                 man.y < woman.y + woman.height &&
                 man.y + man.height > woman.y
             ) {
-                if (currentLevel === 3 && levelGate && !levelGate.isOpen) {
-                    if (!hasKey) {
-                        // This message should always appear when the player reaches the locked gate without the key
-                        messageText = "Saaniya is trapped!\nFind the key to open the gate!";
-                        messageTimer = 120; // Show for 2 seconds
-                        initialMessageActive = true; // Keep message active for a duration
-                        return; // Prevent level end
-                    } else {
-                        levelGate.isOpen = true; // Open the gate
-                        // Remove the gate tiles from the game map for collision and drawing
-                        const gateCol = Math.floor(levelGate.x / gridSize);
-                        const gateTopRow = Math.floor(levelGate.y / gridSize); // Top part of the 2-tile high gate
-                        
-                        if (gameMap[gateTopRow] && gameMap[gateTopRow][gateCol] === 'X') {
-                            gameMap[gateTopRow][gateCol] = ' '; // Clear the top part of the gate
-                        }
-                        const gateBottomRow = gateTopRow + 1; // Bottom part of the 2-tile high gate
-                        if (gameMap[gateBottomRow] && gameMap[gateBottomRow][gateCol] === 'X') {
-                            gameMap[gateBottomRow][gateCol] = ' '; // Corrected: use gateCol
-                        }
-
-                        messageText = "The gate is open!";
-                        messageTimer = 90;
-                        initialMessageActive = true;
-                    }
+                // If there are gates on this level and key is not collected, prevent rescue
+                if (levelGates.length > 0 && !hasKey) {
+                    console.log("Collision with Saaniya, gates exist, but no key. Displaying 'trapped' message.");
+                    messageText = "Saaniya is trapped!\nFind the key to open the gate!";
+                    messageTimer = 120; // Show for 2 seconds
+                    initialMessageActive = true; // Keep message active for a duration
+                    return; // Prevent level end
                 }
 
-                // If it's not level 3, or if it's level 3 and the gate is now open
+                // If it's not a gated level, or if it's a gated level and the key is collected
                 if (!gameEnded) {
                     spawnConfetti();
                 }
@@ -1419,16 +1401,16 @@
                 unlockedLevels = Math.max(unlockedLevels, currentLevel + 1);
                 updateLevelSelector(); // Update button states
 
+                restartButton.classList.add('hidden'); // Ensure restart button is hidden on level completion
+
                 if (currentLevel < Object.keys(gameMaps).length) {
-                    messageText = `Level ${currentLevel} Complete!\nPress 'Next Level' to continue.`;
-                    nextLevelButton.classList.remove('hidden');
-                    restartButton.classList.add('hidden');
-                    playAgainButton.classList.add('hidden');
+                    messageText = `Level ${currentLevel} Complete!\nClick 'Next Level' to continue.`;
+                    nextLevelButton.classList.remove('hidden'); // Show next level button
+                    restartFromBeginningButton.classList.add('hidden'); // Hide restart from beginning
                 } else {
-                    messageText = "You rescued her!\nAll levels complete!\nWant to play again?";
-                    nextLevelButton.classList.add('hidden');
-                    restartButton.classList.add('hidden'); // Hide restart
-                    playAgainButton.classList.remove('hidden'); // Show Play Again
+                    messageText = "You rescued her!\nAll levels complete!\nClick 'Restart from Beginning' to play again!";
+                    nextLevelButton.classList.add('hidden'); // Hide next level button
+                    restartFromBeginningButton.classList.remove('hidden'); // Show restart from beginning
                 }
             }
         }
@@ -1461,6 +1443,22 @@
             // Draw Key if it exists and is not collected
             if (levelKey && !levelKey.collected) {
                 drawCharacter(levelKey, cameraX);
+            }
+
+            // Draw each gate tile if the key has not been collected
+            if (!hasKey) {
+                levelGates.forEach(gateTile => {
+                    // Create a temporary character object for drawing this specific gate tile
+                    const gateDrawingObject = {
+                        x: gateTile.x,
+                        y: gateTile.y,
+                        width: gateType.width,
+                        height: gateType.height, // Each 'X' tile represents one grid unit height of the gate
+                        shape: gateType.shape,
+                        colorMap: gateType.colorMap
+                    };
+                    drawCharacter(gateDrawingObject, cameraX);
+                });
             }
 
             // Draw Haroon
@@ -1496,25 +1494,34 @@
             levelDisplay.textContent = `Level: ${currentLevel}`;
             deathCounter.textContent = `Deaths: ${deathCount}`; // Update death counter display
             
-            // Set initial message only for level 1 or specific level 3 scenario
+            // Set initial message for specific levels
             if (currentLevel === 1) {
                 messageText = "Use Arrow Keys (Left/Right/Up)\nor Touch Controls to move and jump!";
                 messageTimer = 180;
                 initialMessageActive = true;
-            } else if (currentLevel === 3 && !hasKey) { // Added condition for Level 3
-                // Show "Saaniya is trapped" at the start of Level 3 IF key is not yet obtained
-                messageText = "Saaniya is trapped!\nFind the key to open the gate!";
-                messageTimer = 180; // Show for a good duration
-                initialMessageActive = true;
-            } else {
+            } else if (currentLevel === 3) {
+                // Check if the map for Level 3 actually has 'X' tiles (gates)
+                const level3Map = gameMaps[3];
+                const hasGatesInLevel3 = level3Map.some(row => row.includes('X'));
+                if (hasGatesInLevel3) {
+                    messageText = "Saaniya is trapped!\nFind the key to open the gate!";
+                    messageTimer = 180; // Show for 3 seconds
+                    initialMessageActive = true;
+                } else {
+                    messageText = ""; // No specific message if level 3 has no gates
+                    messageTimer = 0;
+                    initialMessageActive = false;
+                }
+            }
+            else { // For other levels, no initial message
                 messageText = "";
                 messageTimer = 0;
                 initialMessageActive = false;
             }
 
-            restartButton.classList.add('hidden');
-            nextLevelButton.classList.add('hidden');
-            playAgainButton.classList.add('hidden');
+            restartButton.classList.add('hidden'); // Ensure restart button is hidden on reset
+            nextLevelButton.classList.add('hidden'); // Ensure next level button is hidden on reset
+            restartFromBeginningButton.classList.add('hidden'); // Ensure restart from beginning is hidden on reset
 
             initializeEntities(); // This will recalculate totalCollectiblesCurrentLevel
             scoreDisplay.textContent = `Score: ${score}/${totalCollectiblesCurrentLevel}`; // Update with new total
@@ -1548,6 +1555,7 @@
             resizeGame(); // Initial resize and character/woman placement
             window.addEventListener('resize', resizeGame); // Add resize listener
             updateLevelSelector(); // Initial update of level selector
+            
             resetGame(); // Call resetGame to correctly set initial message for Level 1
         };
     </script>
